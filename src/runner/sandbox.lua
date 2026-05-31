@@ -1,15 +1,14 @@
 local fs = require("@lune/fs")
-local serde = require("@lune/serde")
 
 local Environment = require("../fake/Environment")
 local fake = require("../fake/index")
+local moduleResolution = require("./module_resolution")
 local paths = require("./paths")
 
 local sandboxModule = {}
 
 local baseGlobals = getfenv(0)
 local realRequire = require
-local cachedLuaurcAliases = nil
 local warnedFallbacks = {}
 local managedBaseGlobalValues = {}
 local managedBaseGlobalPresence = {}
@@ -94,128 +93,20 @@ local function warnFallback(key: string, message: string)
 	print("WARNING: " .. message)
 end
 
-local function getLuaurcAliases()
-	if cachedLuaurcAliases ~= nil then
-		return cachedLuaurcAliases
-	end
-
-	cachedLuaurcAliases = {}
-
-	local luaurcPath = paths.normalizeFilesystemPath(".luaurc")
-
-	if not fs.isFile(luaurcPath) then
-		return cachedLuaurcAliases
-	end
-
-	local ok, decoded = pcall(function()
-		return serde.decode("json", fs.readFile(luaurcPath))
-	end)
-
-	if not ok or type(decoded) ~= "table" or type(decoded.aliases) ~= "table" then
-		return cachedLuaurcAliases
-	end
-
-	for aliasName, aliasPath in pairs(decoded.aliases) do
-		if type(aliasName) == "string" and type(aliasPath) == "string" then
-			cachedLuaurcAliases[aliasName] = aliasPath
-		end
-	end
-
-	return cachedLuaurcAliases
-end
-
-local function resolveLuaurcAlias(aliasName: string, remainder: string): string?
-	local aliasPath = getLuaurcAliases()[aliasName]
-
-	if aliasPath == nil or aliasPath:sub(1, 1) == "~" then
-		return nil
-	end
-
-	local candidatePath = paths.normalizeFilesystemPath(paths.pathJoin(aliasPath, remainder))
-
-	if paths.resolveExistingSourceFile(candidatePath) ~= nil then
-		return candidatePath
-	end
-
-	return nil
-end
-
-local function resolveMountedVirtualPathToFilePath(mounts, virtualPath: string): string?
-	local normalizedVirtualPath = paths.normalizeRequirePath(virtualPath)
-	local bestCandidate = nil
-	local bestMountLength = -1
-
-	for _, mount in ipairs(mounts) do
-		local mountPath = paths.normalizeRequirePath(mount.mountPath)
-
-		if startsWithPath(normalizedVirtualPath, mountPath) then
-			local trailingPath = normalizedVirtualPath:sub(#mountPath + 1)
-
-			if trailingPath:sub(1, 1) == "/" then
-				trailingPath = trailingPath:sub(2)
-			end
-
-			local candidatePath = paths.normalizeFilesystemPath(paths.pathJoin(mount.moduleRoot, trailingPath))
-
-			if paths.resolveExistingSourceFile(candidatePath) ~= nil and #mountPath > bestMountLength then
-				bestCandidate = candidatePath
-				bestMountLength = #mountPath
-			end
-		end
-	end
-
-	return bestCandidate
-end
-
 local function resolveAliasedModuleToFilePath(mounts, modulePath: string): string?
-	local aliasName, remainder = modulePath:match("^@([^/]+)(.*)$")
+	local resolution = moduleResolution.resolveAliasedModuleToFilePath(mounts, modulePath)
 
-	if aliasName == nil then
+	if resolution == nil then
 		return nil
 	end
 
-	if aliasName == "game" then
-		return resolveMountedVirtualPathToFilePath(mounts, remainder)
+	local warning = moduleResolution.formatFallbackWarning(modulePath, resolution)
+
+	if warning ~= nil and resolution.fallbackKind ~= nil then
+		warnFallback(resolution.fallbackKind .. ":" .. modulePath, warning)
 	end
 
-	local aliasedPath = resolveLuaurcAlias(aliasName, remainder)
-
-	if aliasedPath ~= nil then
-		return aliasedPath
-	end
-
-	local repoRelativePath = paths.normalizeFilesystemPath(paths.pathJoin(aliasName, remainder))
-
-	if paths.resolveExistingSourceFile(repoRelativePath) ~= nil then
-		warnFallback(
-			"repo:" .. modulePath,
-			`Falling back to repo-relative alias resolution for "{modulePath}" -> "{repoRelativePath}"`
-		)
-		return repoRelativePath
-	end
-
-	local firstSegment, trailingPath = remainder:match("^/([^/]+)(.*)$")
-
-	if firstSegment ~= nil then
-		for _, mount in ipairs(mounts) do
-			local normalizedRoot = paths.normalizeFilesystemPath(mount.moduleRoot)
-			local rootName = normalizedRoot:match("([^/]+)$")
-
-			if rootName == firstSegment then
-				local candidatePath = paths.normalizeFilesystemPath(paths.pathJoin(normalizedRoot, trailingPath))
-
-				if paths.resolveExistingSourceFile(candidatePath) ~= nil then
-					warnFallback(
-						"mount:" .. modulePath,
-						`Falling back to mounted-root alias resolution for "{modulePath}" -> "{candidatePath}"`
-					)
-					return candidatePath
-				end
-			end
-		end
-	end
-
-	return nil
+	return resolution.filePath
 end
 
 local function moduleFilePathFromRequirePath(mounts, modulePath: string): string?
@@ -708,7 +599,10 @@ function sandboxModule.create(manifestMounts, runtimeConfig)
 		local specialMountPath = getSpecialMountPathFromInstanceParts(parts)
 
 		if specialMountPath ~= nil then
-			local specialModuleFilePath = resolveMountedVirtualPathToFilePath(manifestMounts, specialMountPath)
+			local specialModuleFilePath = moduleResolution.resolveMountedVirtualPathToFilePath(
+				manifestMounts,
+				specialMountPath
+			)
 
 			if specialModuleFilePath ~= nil then
 				return specialModuleFilePath

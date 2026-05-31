@@ -187,24 +187,12 @@ function m.invalidManifestTopLevelErrorsBeforeAnySuiteRuns()
 	assert(result.stdout:find("manifest exploded at top level", 1, true) ~= nil, result.stdout)
 end
 
-function m.printsWarningsForFallbackAliasResolution()
-	local repoFallback = process.exec("lune", {
-		"run",
-		"src/main.lua",
-		"test/runner/fixtures/invalid_require/fallback_repo_alias.lua",
-	})
+function m.printsWarningsForMountedFallbackAliasResolution()
 	local mountFallback = process.exec("lune", {
 		"run",
 		"src/main.lua",
 		"test/fixture-main/scripts/fallback_mount_alias.lua",
 	})
-
-	assert(repoFallback.ok and repoFallback.code == 0)
-	assert(
-		repoFallback.stdout:find('WARNING: Falling back to repo%-relative alias resolution', 1) ~= nil,
-		repoFallback.stdout
-	)
-	assert(repoFallback.stdout:find('@fallback_repo/module', 1) ~= nil, repoFallback.stdout)
 
 	assert(mountFallback.ok and mountFallback.code == 0)
 	assert(
