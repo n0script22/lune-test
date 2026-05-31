@@ -1,5 +1,7 @@
 local TestHelpers = require("@test/test_helpers")
 
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
 local assertEqual = TestHelpers.assertEqual
 local assertRequireError = TestHelpers.assertRequireError
 
@@ -133,6 +135,51 @@ function m.invalidRequiresProduceErrors()
 	assertRequireError(function()
 		require("@test/test_helperss")
 	end, 'Unable to resolve module path "@test/test_helperss"')
+end
+
+function m.rojoModelLoading()
+	local remotes = getEnvironment():loadRojoModel("./src/shared/Remotes.model.json")
+	assert(remotes == ReplicatedStorage.Remotes)
+
+	assert(remotes.ClassName == "Folder")
+	assert(remotes.ServiceA.ClassName == "Folder")
+	assert(remotes.ServiceA.pingRemote.ClassName == "RemoteFunction")
+end
+
+function m.rojoModelLoadingMergesExistingInstances()
+	local remotes = Instance.new("Folder", ReplicatedStorage)
+	remotes.Name = "Remotes"
+
+	local SomeFolder = Instance.new("Folder", remotes)
+	SomeFolder.Name = "SomeFolder"
+
+	getEnvironment():loadRojoModel("./src/shared/Remotes.model.json")
+
+	assert(SomeFolder ~= nil)
+	assert(SomeFolder.Parent == remotes)
+
+	assert(remotes.ClassName == "Folder")
+	assert(remotes.ServiceA.ClassName == "Folder")
+	assert(remotes.ServiceA.pingRemote.ClassName == "RemoteFunction")
+end
+
+function m.rojoModelLoadingErrorsIfOtherInstanceExists()
+	local remotes = Instance.new("Model", ReplicatedStorage)
+	remotes.Name = "Remotes"
+
+	TestHelpers.assertError(function()
+		getEnvironment():loadRojoModel("./src/shared/Remotes.model.json")
+	end, "exists")
+end
+
+function m.rojoModelLoadingisIsolated()
+	local env = getEnvironment()
+	local env2 = createEnvironment()
+
+	env2:loadRojoModel("./src/shared/Remotes.model.json")
+
+	assert(env.game:GetService("ReplicatedStorage").Remotes == nil)
+	assert(env2.game:GetService("ReplicatedStorage").Remotes.ClassName == "Folder")
 end
 
 return m

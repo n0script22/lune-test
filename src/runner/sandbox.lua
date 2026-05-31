@@ -370,6 +370,10 @@ function sandboxModule.create(manifestMounts, runtimeConfig)
 		self:installEnvironment(environment)
 	end
 
+	function controller:getRojoModelContext()
+		return sandboxGlobals.__currentFilePath, manifestMounts
+	end
+
 	environment._installController = controller
 	environment._isBaseEnvironment = true
 	Environment.setActiveInstallController(controller)

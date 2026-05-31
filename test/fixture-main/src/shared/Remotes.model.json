@@ -1,0 +1,16 @@
+{
+    "_comment": "any other fields are ignored",
+    "ClassName": "Folder",
+    "Children": [
+        {
+            "Name": "ServiceA",
+            "ClassName": "Folder",
+            "Children": [
+                {
+                    "Name": "pingRemote",
+                    "ClassName": "RemoteFunction"
+                }
+            ]
+        }
+    ]
+}

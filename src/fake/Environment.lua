@@ -1,3 +1,6 @@
+local fs = require("@lune/fs")
+local serde = require("@lune/serde")
+
 local BrickColor = require("./BrickColor")
 local CFrame = require("./CFrame")
 local ClassData = require("./ClassData")
@@ -10,6 +13,7 @@ local UDim = require("./UDim")
 local UDim2 = require("./UDim2")
 local Vector2 = require("./Vector2")
 local Vector3 = require("./Vector3")
+local paths = require("../runner/paths")
 
 local Environment = {}
 Environment.__index = Environment
@@ -197,6 +201,83 @@ local function removeArrayValue(items, value)
 			return
 		end
 	end
+end
+
+local function createChildInstance(runtime, parent, childName: string, className: string?)
+	local existingChild = parent:FindFirstChild(childName)
+
+	if existingChild ~= nil then
+		return existingChild
+	end
+
+	local child = runtime.Instance.new(className or "Folder", parent)
+	child.Name = childName
+	return child
+end
+
+local function ensureMountNodes(runtime, mountPath: string)
+	local segments = paths.splitPath(mountPath)
+	assert(#segments > 0, "mount path must not be empty")
+
+	if segments[1] == "PlayerScripts" then
+		local localPlayer = runtime:getService("Players").LocalPlayer
+		assert(localPlayer ~= nil, "PlayerScripts mounts require a LocalPlayer")
+
+		local playerScripts = createChildInstance(runtime, localPlayer, "PlayerScripts", "PlayerScripts")
+		playerScripts.ClassName = "PlayerScripts"
+		local starterPlayer = runtime:getService("StarterPlayer")
+		local starterPlayerScripts = createChildInstance(
+			runtime,
+			starterPlayer,
+			"StarterPlayerScripts",
+			"StarterPlayerScripts"
+		)
+		starterPlayerScripts.ClassName = "StarterPlayerScripts"
+
+		local currentNodes = { playerScripts, starterPlayerScripts }
+
+		for index = 2, #segments do
+			local nextNodes = {}
+
+			for nodeIndex, node in ipairs(currentNodes) do
+				local nextNode = createChildInstance(runtime, node, segments[index], "Folder")
+
+				if nodeIndex == 1 then
+					table.insert(nextNodes, nextNode)
+				end
+			end
+
+			currentNodes = nextNodes
+		end
+
+		return currentNodes[1]
+	end
+
+	local node = runtime:getService(segments[1])
+
+	for index = 2, #segments do
+		node = createChildInstance(runtime, node, segments[index], "Folder")
+	end
+
+	return node
+end
+
+local function resolveRojoMountForFile(mounts, filePath: string)
+	local bestMount = nil
+	local bestRelativePath = nil
+
+	for _, mountData in ipairs(mounts) do
+		local relativePath = paths.relativeFilesystemPath(mountData.moduleRoot, filePath)
+
+		if relativePath ~= nil then
+			if bestMount == nil or #mountData.moduleRoot > #bestMount.moduleRoot then
+				bestMount = mountData
+				bestRelativePath = relativePath
+			end
+		end
+	end
+
+	return bestMount, bestRelativePath
 end
 
 function Environment.new(config)
@@ -1338,6 +1419,90 @@ end
 
 function Environment:inspectRemoteTraffic()
 	return cloneArray(self._remoteTraffic)
+end
+
+local function ensureRojoNodeSpec(nodeSpec, label: string)
+	assert(type(nodeSpec) == "table", `{label} must decode to a table`)
+	assert(type(nodeSpec.ClassName) == "string", `{label}.ClassName must be a string`)
+
+	local children = nodeSpec.Children
+	if children ~= nil then
+		assert(type(children) == "table", `{label}.Children must be an array`)
+	end
+
+	return children or {}
+end
+
+function Environment:loadRojoModelData(parent, modelName: string, modelData)
+	assert(type(parent) == "table" and parent._isFakeRobloxInstance, "parent must be a fake Roblox instance")
+	assert(type(modelName) == "string" and modelName ~= "", "modelName must be a non-empty string")
+
+	local function mergeNode(targetParent, nodeName: string, nodeSpec, label: string)
+		local children = ensureRojoNodeSpec(nodeSpec, label)
+		local className = nodeSpec.ClassName
+		local instance = targetParent:FindFirstChild(nodeName)
+
+		if instance ~= nil then
+			assert(
+				instance.ClassName == className,
+				`{label} exists as {instance.ClassName}, expected {className}`
+			)
+		else
+			instance = self.Instance.new(className, targetParent)
+			instance.Name = nodeName
+		end
+
+		for childIndex, childSpec in ipairs(children) do
+			assert(type(childSpec) == "table", `{label}.Children[{childIndex}] must be a table`)
+			assert(type(childSpec.Name) == "string", `{label}.Children[{childIndex}].Name must be a string`)
+			mergeNode(instance, childSpec.Name, childSpec, `{label}.Children[{childIndex}]`)
+		end
+
+		return instance
+	end
+
+	return mergeNode(parent, modelName, modelData, modelName)
+end
+
+function Environment:loadRojoModelFile(parent, modelFilePath: string)
+	local normalizedModelFilePath = paths.normalizeFilesystemPath(modelFilePath)
+	local modelSource = fs.readFile(normalizedModelFilePath)
+	local modelData = serde.decode("json", modelSource)
+	local modelName = normalizedModelFilePath:match("([^/]+)%.model%.json$")
+
+	assert(modelName ~= nil, `Rojo model file must end with .model.json: {normalizedModelFilePath}`)
+
+	return self:loadRojoModelData(parent, modelName, modelData)
+end
+
+function Environment:loadRojoModel(modelPath: string)
+	assert(type(modelPath) == "string", "modelPath must be a string")
+
+	local controller = self._installController
+	assert(controller ~= nil, "Rojo model loading requires an active sandbox")
+	assert(type(controller.getRojoModelContext) == "function", "Active sandbox does not expose Rojo model context")
+
+	local currentFilePath, manifestMounts = controller:getRojoModelContext()
+	local resolvedModelPath = if currentFilePath ~= nil
+		then paths.resolveFilesystemPathFromFile(currentFilePath, modelPath)
+		else paths.normalizeFilesystemPath(modelPath)
+	local mountData, relativeModelPath = resolveRojoMountForFile(manifestMounts, resolvedModelPath)
+
+	assert(
+		mountData ~= nil and relativeModelPath ~= nil,
+		`Rojo model "{modelPath}" is not inside a mounted module root`
+	)
+
+	local parentMountPath = mountData.mountPath
+	local relativeDirectory = paths.dirname(relativeModelPath)
+
+	if relativeDirectory ~= "." then
+		parentMountPath = paths.normalizeRequirePath(parentMountPath .. "/" .. relativeDirectory)
+	end
+
+	local parentInstance = ensureMountNodes(self, parentMountPath)
+
+	return self:loadRojoModelFile(parentInstance, resolvedModelPath)
 end
 
 return Environment
