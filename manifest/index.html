@@ -809,6 +809,7 @@
 <div class="highlight"><pre><span></span><code><span class="kd">local</span><span class="w"> </span><span class="nv">module</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">require</span><span class="p">(</span><span class="s2">&quot;ReplicatedStorage/SomeModule&quot;</span><span class="p">)</span>
 <span class="kd">local</span><span class="w"> </span><span class="nv">sameModule</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">require</span><span class="p">(</span><span class="s2">&quot;@game/ReplicatedStorage/SomeModule&quot;</span><span class="p">)</span>
 </code></pre></div>
+<p>String require paths that start with <code>/</code> or a drive prefix like <code>C:/</code> are treated as filesystem-absolute paths.</p>
 <p>Relative requires are resolved from the current module or script:</p>
 <div class="highlight"><pre><span></span><code><span class="kd">local</span><span class="w"> </span><span class="nv">sibling</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">require</span><span class="p">(</span><span class="s2">&quot;./SiblingModule&quot;</span><span class="p">)</span>
 </code></pre></div>
