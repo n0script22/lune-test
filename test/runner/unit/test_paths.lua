@@ -22,4 +22,13 @@ function m.normalizeModuleLookupPathPreservesUnixAbsoluteStringRequires()
 	assert(paths.normalizeModuleLookupPath("/some/path/") == "/some/path")
 end
 
+function m.resolveManifestResourcePathSupportsParentRelativePaths()
+	local resolved = paths.resolveManifestResourcePath(
+		"test/manifest_parent_relative_paths/test/manifest.luau",
+		"../src/shared"
+	)
+
+	assert(resolved:match("test/manifest_parent_relative_paths/src/shared$") ~= nil, resolved)
+end
+
 return m

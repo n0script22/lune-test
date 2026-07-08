@@ -69,7 +69,7 @@ function paths.resolveFilesystemPathFromFile(baseFilePath: string, targetPath: s
 end
 
 function paths.resolveManifestResourcePath(baseFilePath: string, targetPath: string): string
-	if targetPath:sub(1, 2) == "./" then
+	if targetPath:sub(1, 1) == "." then
 		return paths.normalizeFilesystemPath(paths.pathJoin(paths.dirname(baseFilePath), targetPath))
 	end
 
