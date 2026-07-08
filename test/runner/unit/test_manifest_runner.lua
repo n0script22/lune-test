@@ -91,4 +91,13 @@ function m.discoveredSuitesSupportRelativeAndSelfRequires()
 	assert(results.total == 3)
 end
 
+function m.searchRootForPatternPreservesUnixAndWindowsAbsolutePrefixes()
+	assert(
+		manifestRunner.getSearchRootForPattern("/home/user/lune-test/test/runner/unit/**/*.lua")
+			== "/home/user/lune-test/test/runner/unit"
+	)
+	assert(manifestRunner.getSearchRootForPattern("C:/repo/test/runner/unit/**/*.lua") == "C:/repo/test/runner/unit")
+	assert(manifestRunner.getSearchRootForPattern("./test/runner/unit/**/*.lua"):match("test/runner/unit$") ~= nil)
+end
+
 return m

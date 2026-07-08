@@ -166,6 +166,31 @@ local function discoverTestCases(modulePath: string, moduleIsFile: boolean, moun
 	return cases
 end
 
+function manifestRunner.getSearchRootForPattern(resolvedPattern: string): string
+	local patternParts = paths.splitPath(resolvedPattern)
+	local staticParts = {}
+
+	for _, segment in ipairs(patternParts) do
+		if pathHasWildcard(segment) then
+			break
+		end
+
+		table.insert(staticParts, segment)
+	end
+
+	if #staticParts == 0 then
+		return process.cwd
+	end
+
+	local searchRoot = paths.joinParts(staticParts)
+
+	if resolvedPattern:sub(1, 1) == "/" then
+		return "/" .. searchRoot
+	end
+
+	return searchRoot
+end
+
 local function discoverTestsFromLocations(testLocations, manifestFilePath: string, manifestMounts)
 	assert(type(testLocations) == "table", "manifest.testLocations must be a table")
 
@@ -175,18 +200,7 @@ local function discoverTestsFromLocations(testLocations, manifestFilePath: strin
 		assert(type(locationPattern) == "string", `manifest.testLocations[{index}] must be a string`)
 
 		local resolvedPattern = paths.resolveManifestResourcePath(manifestFilePath, locationPattern)
-		local patternParts = paths.splitPath(resolvedPattern)
-		local staticParts = {}
-
-		for _, segment in ipairs(patternParts) do
-			if pathHasWildcard(segment) then
-				break
-			end
-
-			table.insert(staticParts, segment)
-		end
-
-		local searchRoot = if #staticParts == 0 then process.cwd else paths.joinParts(staticParts)
+		local searchRoot = manifestRunner.getSearchRootForPattern(resolvedPattern)
 		local candidateFiles = {}
 		listFilesRecursive(searchRoot, candidateFiles)
 

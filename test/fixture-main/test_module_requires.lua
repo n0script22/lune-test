@@ -1,4 +1,5 @@
 local TestHelpers = require("@test/test_helpers")
+local process = require("@lune/process")
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -83,6 +84,21 @@ function m.requireStylesResolveToSameModuleAndShareState()
 	assertEqual(byGameString.getCount(), 1)
 end
 
+function m.unixAbsoluteStringRequires()
+	if process.cwd:sub(1, 1) ~= "/" then
+		return
+	end
+
+	local statefulModulePath = process.cwd .. "/test/fixture-main/src/shared/StatefulModule"
+	local utilModuleDirectoryPath = process.cwd .. "/test/fixture-main/src/shared/UtilModule/"
+	local byUnixAbsoluteString = require(statefulModulePath)
+	local byGameString = require("@game/ReplicatedStorage/StatefulModule")
+	local byUnixAbsoluteDirectory = require(utilModuleDirectoryPath)
+
+	assert(byUnixAbsoluteString == byGameString)
+	assert(byUnixAbsoluteDirectory.add(2, 3) == 5)
+end
+
 function m.invalidRequiresProduceErrors()
 	assertRequireError(function()
 		require(ReplicatedStorage.InvalidPath)
@@ -94,7 +110,7 @@ function m.invalidRequiresProduceErrors()
 
 	assertRequireError(function()
 		require("/invalidPath")
-	end, 'Unable to resolve module path "invalidPath"')
+	end, "missing module source for /invalidPath")
 
 	assertRequireError(function()
 		require("12345")

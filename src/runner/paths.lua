@@ -3,6 +3,23 @@ local process = require("@lune/process")
 
 local paths = {}
 
+local function normalizeQualifiedPath(path: string): string
+	if path:match("^%a:[/]") ~= nil then
+		local drivePrefix = path:sub(1, 2)
+		local remainder = path:sub(4)
+		local normalizedRemainder = paths.joinParts(paths.splitPath(remainder))
+
+		return if normalizedRemainder == "" then drivePrefix .. "/" else drivePrefix .. "/" .. normalizedRemainder
+	end
+
+	if path:sub(1, 1) == "/" then
+		local normalizedRemainder = paths.joinParts(paths.splitPath(path))
+		return if normalizedRemainder == "" then "/" else "/" .. normalizedRemainder
+	end
+
+	return paths.joinParts(paths.splitPath(path))
+end
+
 function paths.isAbsoluteFilesystemPath(path: string): boolean
 	return path:match("^/") ~= nil or path:match("^%a:[/]") ~= nil
 end
@@ -32,20 +49,7 @@ function paths.normalizeFilesystemPath(path: string): string
 		path = paths.pathJoin(process.cwd, path)
 	end
 
-	if path:match("^%a:[/]") ~= nil then
-		local drivePrefix = path:sub(1, 2)
-		local remainder = path:sub(4)
-		local normalizedRemainder = paths.joinParts(paths.splitPath(remainder))
-
-		return if normalizedRemainder == "" then drivePrefix .. "/" else drivePrefix .. "/" .. normalizedRemainder
-	end
-
-	if path:sub(1, 1) == "/" then
-		local normalizedRemainder = paths.joinParts(paths.splitPath(path))
-		return if normalizedRemainder == "" then "/" else "/" .. normalizedRemainder
-	end
-
-	return paths.joinParts(paths.splitPath(path))
+	return normalizeQualifiedPath(path)
 end
 
 function paths.resolvePathFromFile(baseFilePath: string, targetPath: string): string
@@ -97,6 +101,19 @@ function paths.normalizeRequirePath(path: string): string
 	path = path:gsub("%.luau$", "")
 	path = path:gsub("%.lua$", "")
 	path = path:gsub("/+$", "")
+
+	return paths.joinParts(paths.splitPath(path))
+end
+
+function paths.normalizeModuleLookupPath(path: string): string
+	path = path:gsub("\\", "/")
+	path = path:gsub("%.luau$", "")
+	path = path:gsub("%.lua$", "")
+	path = path:gsub("/+$", "")
+
+	if paths.isAbsoluteFilesystemPath(path) then
+		return normalizeQualifiedPath(path)
+	end
 
 	return paths.joinParts(paths.splitPath(path))
 end

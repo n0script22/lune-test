@@ -131,6 +131,10 @@ local function moduleFilePathFromRequirePath(mounts, modulePath: string): string
 	return nil
 end
 
+local function normalizeMountLookupPath(modulePath: string): string
+	return paths.normalizeModuleLookupPath(modulePath)
+end
+
 function sandboxModule.create(manifestMounts, runtimeConfig)
 	local fileModuleCache = {}
 	local fileModuleInstanceCache = {}
@@ -371,7 +375,7 @@ function sandboxModule.create(manifestMounts, runtimeConfig)
 		local normalizedModuleRoot = paths.normalizeFilesystemPath(moduleRoot)
 		local mount = {
 			service = rootInstance,
-			root = paths.normalizeRequirePath(normalizedModuleRoot),
+			root = normalizeMountLookupPath(normalizedModuleRoot),
 			moduleRoot = normalizedModuleRoot,
 		}
 
@@ -467,7 +471,7 @@ function sandboxModule.create(manifestMounts, runtimeConfig)
 	end
 
 	local function ensureInstanceForModulePath(modulePath: string)
-		modulePath = paths.normalizeRequirePath(modulePath)
+		modulePath = normalizeMountLookupPath(modulePath)
 
 		local mount = findMountForPath(modulePath)
 
@@ -639,6 +643,10 @@ function sandboxModule.create(manifestMounts, runtimeConfig)
 			end
 
 			error("Relative require used without a current script: " .. path)
+		end
+
+		if paths.isAbsoluteFilesystemPath(path) then
+			return paths.normalizeModuleLookupPath(path)
 		end
 
 		return paths.normalizeRequirePath(path)

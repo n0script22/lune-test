@@ -64,4 +64,26 @@ function m.resolvesMountedRootFallbacksDirectly()
 	assert(resolution.fallbackKind == "mount")
 end
 
+function m.resolvesGameAliasAgainstDriveQualifiedMountRoots()
+	local expectedPath = "C:/repo/src/shared/UtilModule"
+	local resolution = moduleResolution.resolveAliasedModuleToFilePath({
+		{
+			mountPath = "ReplicatedStorage",
+			moduleRoot = "C:\\repo\\src\\shared",
+		},
+	}, "@game/ReplicatedStorage/UtilModule", {
+		resolveExistingSourceFile = function(path: string): string?
+			if path == expectedPath then
+				return expectedPath .. "/init.lua"
+			end
+
+			return nil
+		end,
+	})
+
+	assert(resolution ~= nil)
+	assert(resolution.filePath == expectedPath)
+	assert(resolution.fallbackKind == nil)
+end
+
 return m

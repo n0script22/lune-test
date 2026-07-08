@@ -105,6 +105,8 @@ local module = require("ReplicatedStorage/SomeModule")
 local sameModule = require("@game/ReplicatedStorage/SomeModule")
 ```
 
+String require paths that start with `/` or a drive prefix like `C:/` are treated as filesystem-absolute paths.
+
 Relative requires are resolved from the current module or script:
 
 ```lua
