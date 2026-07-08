@@ -1,6 +1,7 @@
 local manifestRunner = require("@src/runner/manifest")
 local runner = require("@src/runner/run")
 local paths = require("@src/runner/paths")
+local sandbox = require("@src/runner/sandbox")
 
 local m = {}
 
@@ -12,8 +13,31 @@ local function countSuiteCases(manifest, suiteName)
 	assert(suite ~= nil, `missing suite: {suiteName}`)
 
 	local total = 0
+	local caseNames = {}
 
-	for _ in pairs(suite.cases) do
+	for caseName in pairs(suite.cases) do
+		caseNames[caseName] = true
+	end
+
+	if suite.discoverCases then
+		local discoverySandbox = sandbox.create(suite.mounts, suite.environment)
+		discoverySandbox.install()
+		discoverySandbox.globals.__currentFilePath = if suite.moduleIsFile then suite.module else nil
+
+		local suiteModule = if suite.moduleIsFile
+			then discoverySandbox.loadFileModule(suite.module)
+			else discoverySandbox.require(suite.module)
+
+		discoverySandbox.uninstall()
+
+		for exportName, exportValue in pairs(suiteModule) do
+			if type(exportName) == "string" and type(exportValue) == "function" then
+				caseNames[exportName] = true
+			end
+		end
+	end
+
+	for _caseName in pairs(caseNames) do
 		total += 1
 	end
 

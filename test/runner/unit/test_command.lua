@@ -64,6 +64,21 @@ function m.runsManualSelectionsForDiscoveredSuitesByFilename()
 	assert(results.total == 2)
 end
 
+function m.onlyLoadsSelectedDiscoveredSuite()
+	local result = process.exec("lune", {
+		"run",
+		"src/main.lua",
+		"--manifest",
+		"test/runner/fixtures/selected_discovered_suite_only/manifest.lua",
+		"test_case",
+	})
+
+	assert(result.ok and result.code == 0, result.stdout)
+	assert(result.stdout:find("%[TEST%]: test_case", 1, false) ~= nil, result.stdout)
+	assert(result.stdout:find("%[PASS%]: selectedCaseRuns", 1, false) ~= nil, result.stdout)
+	assert(result.stdout:find("unselected discovered suite loaded", 1, true) == nil, result.stdout)
+end
+
 function m.runsWorkspaceLocalDiscoveredSuitesFromManifest()
 	local results = command.run({
 		"--manifest",
