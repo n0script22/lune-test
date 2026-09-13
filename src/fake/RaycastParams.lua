@@ -1,17 +1,42 @@
 local RaycastParams = {}
-RaycastParams.__index = RaycastParams
 
-function RaycastParams.new()
-	return setmetatable({
-		FilterType = "Exclude",
-		FilterDescendantsInstances = {},
-		IgnoreWater = false,
-		BruteForceAllSlow = false,
-		RespectCanCollide = false,
-		CollisionGroup = "Default",
-	}, RaycastParams)
+local function getValues(self)
+	return rawget(self, "_values")
 end
 
+function RaycastParams.__index(self, key)
+	local values = getValues(self)
+
+	if values ~= nil and values[key] ~= nil then
+		return values[key]
+	end
+
+	return RaycastParams[key]
+end
+
+-- Engine (verified against Studio): FilterType only accepts the
+-- RaycastFilterType enum values; anything else errors on assignment.
+-- Values live in a backing store so __newindex sees every write.
+function RaycastParams.__newindex(self, key, value)
+	if key == "FilterType" and value ~= "Exclude" and value ~= "Include" then
+		error(`Invalid FilterType {tostring(value)}. Must be Enum.RaycastFilterType.Exclude or Enum.RaycastFilterType.Include`)
+	end
+
+	getValues(self)[key] = value
+end
+
+function RaycastParams.new()
+	local self = setmetatable({ _values = {} }, RaycastParams)
+
+	self.FilterType = "Exclude"
+	self.FilterDescendantsInstances = {}
+	self.IgnoreWater = false
+	self.BruteForceAllSlow = false
+	self.RespectCanCollide = false
+	self.CollisionGroup = "Default"
+
+	return self
+end
 function RaycastParams:AddToFilter(instances)
 	if type(instances) == "table" and instances._isFakeRobloxInstance then
 		table.insert(self.FilterDescendantsInstances, instances)

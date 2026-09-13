@@ -51,7 +51,7 @@ local module = require(shared.SomeModule)
 
 ## Workspace
 
-`Workspace` holds live 3D objects and supports geometric queries against `BasePart` descendants (including `Workspace.Terrain`). Parts are treated as oriented boxes driven by their `CFrame` and `Size`:
+`Workspace` holds live 3D objects and supports geometric queries against `BasePart` descendants (including `Workspace.Terrain`). Shapes are respected (all verified against Studio): `Block` casts as an oriented box, `Ball` as a sphere (radius `min(Size)/2`), `Cylinder` as an X-axis cylinder (length `Size.X`, radius `min(Size.Y, Size.Z)/2`), `Wedge` as a ramp with its tall face at `+Z` tapering to the `-Z` bottom edge (solid `y <= z`), and `CornerWedge` as a double ramp peaking at the (`+X`, `-Z`) top corner (solid `y <= min(x, -z)`):
 
 ```lua
 local wall = Instance.new("Part", workspace)
@@ -68,7 +68,7 @@ assert(hit.Normal == Vector3.new(-1, 0, 0))
 assert(hit.Material == Enum.Material.Plastic)
 ```
 
-The direction vector encodes the max distance, so rays shorter than the gap miss. A `nil` result means no eligible part was hit.
+The direction vector encodes the max distance, so rays shorter than the gap miss — and a ray ending exactly on a face misses too (hits need `t < 1`). A `nil` result means no eligible part was hit. A ray starting inside a part passes through it (but can still hit parts beyond).
 
 Use `ExcludeInstances`/`IncludeInstances` to filter candidates (exclusions win; an empty include list hits nothing):
 
@@ -79,7 +79,7 @@ params.ExcludeInstances = { character }
 local hit = workspace:Raycast(origin, direction, params)
 ```
 
-Parts with `CanQuery` off are skipped (`RespectCanCollide` swaps the check to `CanCollide`; `BruteForceAllSlow` skips both). Collision groups registered with `RegisterCollisionGroup` participate too: parts whose group is non-collidable with the query `CollisionGroup` are ignored.
+Parts with `CanQuery` off are skipped (`RespectCanCollide` swaps the check to `CanCollide`; `BruteForceAllSlow` skips only `CanQuery`/`CanCollide` — collision groups, `Exclude`/`Include` filters and `IgnoreWater` still apply). Collision groups registered with `RegisterCollisionGroup` participate too: parts whose group is non-collidable with the query `CollisionGroup` are ignored. Renaming a group onto an existing name is a silent no-op.
 
 ```lua
 workspace:RegisterCollisionGroup("Ghosts")
@@ -102,12 +102,24 @@ local hit = workspace:Raycast(Vector3.new(0, 10, 0), Vector3.new(0, -30, 0))
 assert(hit.Instance == workspace.Terrain)
 ```
 
-Shape queries sweep a volume along a direction and skip parts the shape starts inside. `Ball` parts cast as spheres; other shapes cast as boxes:
+Shape queries sweep a volume along a direction and skip parts the shape starts inside; unlike rays, sweeps count exact-touch (`t = 1`) as hits. `Ball` targets sweep as spheres (radius `min(Size)/2`) and `Cylinder` targets sweep as X-axis cylinders; `Wedge`/`CornerWedge` targets sweep as boxes. Casters follow the same rule: `Ball` parts cast as spheres, `Block`/`Cylinder` parts cast as boxes, and `Wedge`/`CornerWedge` parts cast with their exact shape (all matching the engine):
 
 ```lua
 local hit = workspace:Spherecast(Vector3.new(0, 0, 0), 1, Vector3.new(10, 0, 0))
 local blockHit = workspace:Blockcast(CFrame.new(0, 0, 0), Vector3.new(2, 2, 2), Vector3.new(10, 0, 0))
 local shapeHit = workspace:Shapecast(handle, Vector3.new(10, 0, 0))
+```
+
+Part shape affects raycasts (a ray through a box corner outside the inscribed sphere/cylinder/wedge misses):
+
+```lua
+local ball = Instance.new("Part", workspace)
+ball.Position = Vector3.new(5, 0, 0)
+ball.Size = Vector3.new(2, 2, 2)
+ball.Shape = Enum.PartType.Ball
+
+assert(workspace:Raycast(Vector3.new(0, 0.9, 0.9), Vector3.new(10, 0, 0)) == nil)
+assert(workspace:Raycast(Vector3.new(0, 0, 0), Vector3.new(10, 0, 0)).Instance == ball)
 ```
 
 ## RunService

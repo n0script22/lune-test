@@ -75,6 +75,12 @@ function CollisionGroups.rename(data, fromName: string, toName: string)
 		return
 	end
 
+	-- Engine (verified against Studio): renaming onto an already-registered
+	-- name is a silent no-op; both groups and all relations are preserved.
+	if data.groups[toName] then
+		return
+	end
+
 	data.groups[fromName] = nil
 	data.groups[toName] = true
 	data.masks[toName] = data.masks[fromName]

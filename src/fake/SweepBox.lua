@@ -1,21 +1,10 @@
 local Vector3 = require("./Vector3")
+local SweepFrame = require("./SweepFrame")
 
-local SweepGeometry = {}
+local dot3 = SweepFrame.dot3
+local SAT_OVERLAP_EPS = SweepFrame.SAT_OVERLAP_EPS
 
-local EPSILON = 1e-8
-local SAT_OVERLAP_EPS = 1e-9
-
-local function dot3(a, b)
-	return a.X * b.X + a.Y * b.Y + a.Z * b.Z
-end
-
-function SweepGeometry.rotationColumns(rotation)
-	return {
-		Vector3.new(rotation[1], rotation[4], rotation[7]),
-		Vector3.new(rotation[2], rotation[5], rotation[8]),
-		Vector3.new(rotation[3], rotation[6], rotation[9]),
-	}
-end
+local SweepBox = {}
 
 local function projectedHalfExtent(halves, cols, axis)
 	return halves[1] * math.abs(dot3(cols[1], axis))
@@ -23,7 +12,7 @@ local function projectedHalfExtent(halves, cols, axis)
 		+ halves[3] * math.abs(dot3(cols[3], axis))
 end
 
-function SweepGeometry.sweepBoxVsBox(
+function SweepBox.sweepBoxVsBox(
 	castCenter0,
 	castCols,
 	castHalf,
@@ -212,7 +201,7 @@ local function clampPointToPartBox(worldPoint, partCenter, partCols, partHalf)
 	return partCenter + partCols[1] * clamped[1] + partCols[2] * clamped[2] + partCols[3] * clamped[3]
 end
 
-function SweepGeometry.boxContactPoint(
+function SweepBox.boxContactPoint(
 	castCenterStar,
 	castCols,
 	castHalf,
@@ -308,164 +297,4 @@ function SweepGeometry.boxContactPoint(
 	return contact - partPlaneNormal * separation
 end
 
-function SweepGeometry.sweepSphereVsAABB(origin, direction, half, radius)
-	if
-		math.abs(origin.X) < half.X
-		and math.abs(origin.Y) < half.Y
-		and math.abs(origin.Z) < half.Z
-	then
-		return nil
-	end
-
-	local o = { origin.X, origin.Y, origin.Z }
-	local d = { direction.X, direction.Y, direction.Z }
-	local h = { half.X, half.Y, half.Z }
-
-	local bestT = nil
-	local bestNormal = nil
-	local bestContact = nil
-
-	local function consider(t, normal, contact)
-		if t >= 0 and t <= 1 and (bestT == nil or t < bestT) then
-			bestT = t
-			bestNormal = normal
-			bestContact = contact
-		end
-	end
-
-	for j = 1, 3 do
-		if math.abs(d[j]) > EPSILON then
-			local k1 = (j % 3) + 1
-			local k2 = ((j + 1) % 3) + 1
-
-			for _, side in ipairs({ 1, -1 }) do
-				local plane = side * (h[j] + radius)
-				local t = (plane - o[j]) / d[j]
-
-				if t >= 0 and t <= 1 then
-					local p1 = o[k1] + d[k1] * t
-					local p2 = o[k2] + d[k2] * t
-
-					if math.abs(p1) <= h[k1] + 1e-9 and math.abs(p2) <= h[k2] + 1e-9 then
-						local normalParts = { 0, 0, 0 }
-						normalParts[j] = side
-						local contactParts = { 0, 0, 0 }
-						contactParts[j] = side * h[j]
-						contactParts[k1] = p1
-						contactParts[k2] = p2
-						consider(
-							t,
-							Vector3.new(normalParts[1], normalParts[2], normalParts[3]),
-							Vector3.new(contactParts[1], contactParts[2], contactParts[3])
-						)
-					end
-				end
-			end
-		end
-	end
-
-	for j = 1, 3 do
-		local k1 = (j % 3) + 1
-		local k2 = ((j + 1) % 3) + 1
-
-		for _, s1 in ipairs({ 1, -1 }) do
-			for _, s2 in ipairs({ 1, -1 }) do
-				local ux = o[k1] - s1 * h[k1]
-				local uy = o[k2] - s2 * h[k2]
-				local vx = d[k1]
-				local vy = d[k2]
-				local a = vx * vx + vy * vy
-
-				if a > EPSILON * EPSILON then
-					local b = 2 * (ux * vx + uy * vy)
-					local c = ux * ux + uy * uy - radius * radius
-					local discriminant = b * b - 4 * a * c
-
-					if discriminant >= 0 then
-						local root = math.sqrt(discriminant)
-
-						for _, t in ipairs({ (-b - root) / (2 * a), (-b + root) / (2 * a) }) do
-							if t >= 0 and t <= 1 then
-								local along = o[j] + d[j] * t
-
-								if math.abs(along) <= h[j] + 1e-9 then
-									local px = o[k1] + d[k1] * t
-									local py = o[k2] + d[k2] * t
-									local nx = px - s1 * h[k1]
-									local ny = py - s2 * h[k2]
-									local length = math.sqrt(nx * nx + ny * ny)
-
-									if length > 1e-9 then
-										local normalParts = { 0, 0, 0 }
-										normalParts[k1] = nx / length
-										normalParts[k2] = ny / length
-										local contactParts = { 0, 0, 0 }
-										contactParts[j] = along
-										contactParts[k1] = s1 * h[k1]
-										contactParts[k2] = s2 * h[k2]
-										consider(
-											t,
-											Vector3.new(normalParts[1], normalParts[2], normalParts[3]),
-											Vector3.new(contactParts[1], contactParts[2], contactParts[3])
-										)
-									end
-								end
-							end
-						end
-					end
-				end
-			end
-		end
-	end
-
-	for _, s1 in ipairs({ 1, -1 }) do
-		for _, s2 in ipairs({ 1, -1 }) do
-			for _, s3 in ipairs({ 1, -1 }) do
-				local corner = { s1 * h[1], s2 * h[2], s3 * h[3] }
-				local wx = o[1] - corner[1]
-				local wy = o[2] - corner[2]
-				local wz = o[3] - corner[3]
-				local a = d[1] * d[1] + d[2] * d[2] + d[3] * d[3]
-
-				if a > EPSILON * EPSILON then
-					local b = 2 * (wx * d[1] + wy * d[2] + wz * d[3])
-					local c = wx * wx + wy * wy + wz * wz - radius * radius
-					local discriminant = b * b - 4 * a * c
-
-					if discriminant >= 0 then
-						local root = math.sqrt(discriminant)
-
-						for _, t in ipairs({ (-b - root) / (2 * a), (-b + root) / (2 * a) }) do
-							if t >= 0 and t <= 1 then
-								local px = o[1] + d[1] * t - corner[1]
-								local py = o[2] + d[2] * t - corner[2]
-								local pz = o[3] + d[3] * t - corner[3]
-								local length = math.sqrt(px * px + py * py + pz * pz)
-
-								if length > 1e-9 then
-									consider(
-										t,
-										Vector3.new(px / length, py / length, pz / length),
-										Vector3.new(corner[1], corner[2], corner[3])
-									)
-								end
-							end
-						end
-					end
-				end
-			end
-		end
-	end
-
-	if bestT == nil then
-		return nil
-	end
-
-	return {
-		t = bestT,
-		normal = bestNormal,
-		contact = bestContact,
-	}
-end
-
-return SweepGeometry
+return SweepBox

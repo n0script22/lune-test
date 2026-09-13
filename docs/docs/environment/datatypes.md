@@ -197,7 +197,7 @@ assert((point - Vector3.new(4, 0, 0)).Magnitude < 1e-6)
 
 ## RaycastParams
 
-`RaycastParams.new()` returns a blank mutable params object with engine defaults (`FilterType` of `"Exclude"`, empty `FilterDescendantsInstances`, `IgnoreWater` off, `BruteForceAllSlow` off, `RespectCanCollide` off, `CollisionGroup` of `"Default"`). Each call returns an independent object. Prefer the modern filter lists; the legacy `FilterType`/`FilterDescendantsInstances` pair still works and exclusions always win over inclusions.
+`RaycastParams.new()` returns a blank mutable params object with engine defaults (`FilterType` of `"Exclude"`, empty `FilterDescendantsInstances`, `IgnoreWater` off, `BruteForceAllSlow` off, `RespectCanCollide` off, `CollisionGroup` of `"Default"`). Each call returns an independent object. Prefer the modern filter lists; the legacy `FilterType`/`FilterDescendantsInstances` pair still works and exclusions always win over inclusions. Like the engine, assigning anything other than `Enum.RaycastFilterType.Exclude`/`Include` to `FilterType` errors.
 
 `AddToFilter` accepts a single instance or an array of instances:
 

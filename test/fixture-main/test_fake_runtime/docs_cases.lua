@@ -489,4 +489,14 @@ function m.datatypesDocsRaycastResultExample()
 	assert(hit.Instance == wall)
 end
 
+function m.servicesDocsShapeExample()
+	local ball = Instance.new("Part", workspace)
+	ball.Position = Vector3.new(5, 0, 0)
+	ball.Size = Vector3.new(2, 2, 2)
+	ball.Shape = Enum.PartType.Ball
+
+	assert(workspace:Raycast(Vector3.new(0, 0.9, 0.9), Vector3.new(10, 0, 0)) == nil)
+	assert(workspace:Raycast(Vector3.new(0, 0, 0), Vector3.new(10, 0, 0)).Instance == ball)
+end
+
 return m

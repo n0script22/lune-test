@@ -70,6 +70,26 @@ end
 function m.vector3ZeroUnitIsNaN()
 	local unit = Vector3.zero.Unit
 	assert(unit.X ~= unit.X and unit.Y ~= unit.Y and unit.Z ~= unit.Z, "zero Unit must be NaN components")
+	assert(unit.Magnitude ~= unit.Magnitude, "zero Unit magnitude must be NaN")
+end
+
+function m.vector3MagnitudeNegativeAndFractional()
+	assertEqual(Vector3.new(-3, -4, 0).Magnitude, 5)
+	assertClose(Vector3.new(1, 1, 1).Magnitude, math.sqrt(3), 1e-9, "diagonal")
+	assertClose(Vector3.new(0.3, 0.4, 0).Magnitude, 0.5, 1e-9, "fractional")
+end
+
+function m.vector3UnitDiagonalAndImmutability()
+	local original = Vector3.new(1, 1, 1)
+	local unit = original.Unit
+
+	assertClose(unit.Magnitude, 1, 1e-9, "unit magnitude")
+	assertClose(unit.X, 1 / math.sqrt(3), 1e-9, "unit x")
+	assertEqual(original, Vector3.new(1, 1, 1))
+
+	local negUnit = Vector3.new(-5, 0, 0).Unit
+	assertVector3Equal(negUnit, -1, 0, 0)
+	assertClose(unit.Unit.Magnitude, 1, 1e-9, "unit of unit")
 end
 
 function m.vector3MagnitudeTracksArithmetic()
