@@ -42,11 +42,32 @@ env:uninstall()
 
 ## Instance Services
 
-Generic services such as `ReplicatedStorage`, `ServerScriptService`, `StarterPlayer`, and `Workspace` are fake instances. Mounted modules are parented under these services and can be resolved lazily when a test accesses them.
+Generic services such as `ReplicatedStorage`, `ServerScriptService`, and `StarterPlayer` are fake instances. Mounted modules are parented under these services and can be resolved lazily when a test accesses them.
 
 ```lua
 local shared = game:GetService("ReplicatedStorage")
 local module = require(shared.SomeModule)
+```
+
+## Workspace
+
+`Workspace` is a fake instance with a scriptable `Raycast` stub. It returns `nil` (miss) by default; assign a function per test to script hits. The stub receives `(origin, direction, raycastParams)`:
+
+```lua
+local params = RaycastParams.new()
+params.FilterType = Enum.RaycastFilterType.Exclude
+params.FilterDescendantsInstances = { character }
+
+assert(workspace:Raycast(origin, direction, params) == nil)
+
+workspace.Raycast = function(_, _origin, _direction, _params)
+	local wall = Instance.new("Part")
+	wall.Name = "Wall"
+	return { Instance = wall }
+end
+
+local hit = workspace:Raycast(origin, direction, params)
+assert(hit.Instance.Name == "Wall")
 ```
 
 ## RunService

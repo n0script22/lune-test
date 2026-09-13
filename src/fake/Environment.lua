@@ -49,6 +49,10 @@ local defaultEnum = {
 		Ascending = "Ascending",
 		Descending = "Descending",
 	},
+	RaycastFilterType = {
+		Exclude = "Exclude",
+		Include = "Include",
+	},
 }
 
 local function cloneArray(items)
@@ -996,6 +1000,15 @@ function Environment:_createMemoryStoreService()
 	return service
 end
 
+function Environment:_createWorkspaceService()
+	local service = self:_newInstance("Workspace", self.game, true)
+	service.Name = "Workspace"
+	service.Raycast = function(_, _origin, _direction, _raycastParams)
+		return nil
+	end
+	return service
+end
+
 function Environment:_createGenericService(serviceName: string)
 	if ClassData.isSupported(serviceName) then
 		local service = self:_newInstance(serviceName, self.game, true)
@@ -1024,6 +1037,10 @@ function Environment:_instantiateService(serviceName: string)
 
 	if serviceName == "MemoryStoreService" then
 		return self:_createMemoryStoreService()
+	end
+
+	if serviceName == "Workspace" then
+		return self:_createWorkspaceService()
 	end
 
 	return self:_createGenericService(serviceName)

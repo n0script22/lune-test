@@ -18,7 +18,7 @@ The sandbox exposes:
 - `Vector2`
 - `Vector3`
 
-`Enum.SortDirection.Ascending` and `Enum.SortDirection.Descending` are available for fake MemoryStore sorted maps.
+`Enum.SortDirection.Ascending` and `Enum.SortDirection.Descending` are available for fake MemoryStore sorted maps. `Enum.RaycastFilterType.Exclude` and `Enum.RaycastFilterType.Include` are available for fake raycasts.
 
 ## Supported Instance Classes
 
