@@ -52,4 +52,24 @@ function PartAccess.getPartShape(part): string
 	return "Block"
 end
 
+function PartAccess.getCollisionFidelity(part): string
+	local fidelity = part.CollisionFidelity
+
+	if type(fidelity) == "string" then
+		return fidelity
+	end
+
+	return "Box"
+end
+
+function PartAccess.getCollisionConvexes(part)
+	local convexes = part._collisionConvexes
+
+	if type(convexes) == "table" then
+		return convexes
+	end
+
+	return nil
+end
+
 return PartAccess

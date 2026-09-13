@@ -74,6 +74,17 @@ local defaultEnum = {
 		Wedge = "Wedge",
 		CornerWedge = "CornerWedge",
 	},
+	CollisionFidelity = {
+		Box = "Box",
+		Hull = "Hull",
+		Default = "Default",
+		PreciseConvexDecomposition = "PreciseConvexDecomposition",
+	},
+	RenderFidelity = {
+		Automatic = "Automatic",
+		Precise = "Precise",
+		Performance = "Performance",
+	},
 }
 
 local function cloneArray(items)
