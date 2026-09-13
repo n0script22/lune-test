@@ -138,7 +138,9 @@ assert(count == 1)
 
 `Vector2` supports `new`, `zero`, `one`, `xAxis`, `yAxis`, `Dot`, `Lerp`, arithmetic operators, equality, unary minus, and string conversion.
 
-`Vector3` supports `new`, `zero`, `one`, `xAxis`, `yAxis`, `zAxis`, `Dot`, `Cross`, `Lerp`, arithmetic operators, equality, unary minus, and string conversion.
+`Vector3` supports `new`, `zero`, `one`, `xAxis`, `yAxis`, `zAxis`, `Magnitude`, `Unit`, `Dot`, `Cross`, `Lerp`, arithmetic operators, equality, unary minus, and string conversion.
+
+`Magnitude` is the vector length (`math.sqrt(X^2 + Y^2 + Z^2)`) and `Unit` is the normalized direction. `Unit` of a zero vector has `NaN` components, matching the engine.
 
 ```lua
 local a = Vector3.new(1, 2, 3)
@@ -146,6 +148,8 @@ local b = Vector3.new(4, 5, 6)
 
 assert(a + b == Vector3.new(5, 7, 9))
 assert(a:Dot(b) == 32)
+assert(Vector3.new(3, 4, 0).Magnitude == 5)
+assert(Vector3.new(0, 5, 0).Unit == Vector3.new(0, 1, 0))
 ```
 
 ## CFrame

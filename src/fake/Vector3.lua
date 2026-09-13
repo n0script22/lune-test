@@ -1,5 +1,21 @@
 local Vector3 = {}
-Vector3.__index = Vector3
+
+local function magnitudeOf(self): number
+	return math.sqrt(self.X * self.X + self.Y * self.Y + self.Z * self.Z)
+end
+
+function Vector3.__index(self, key)
+	if key == "Magnitude" then
+		return magnitudeOf(self)
+	end
+
+	if key == "Unit" then
+		local magnitude = magnitudeOf(self)
+		return Vector3.new(self.X / magnitude, self.Y / magnitude, self.Z / magnitude)
+	end
+
+	return Vector3[key]
+end
 
 function Vector3.new(x: number?, y: number?, z: number?)
 	return setmetatable({

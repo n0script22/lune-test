@@ -58,6 +58,29 @@ function m.vector3HelpersAndConstants()
 	assertVector3Equal(Vector3.new(0, 0, 0):Lerp(Vector3.new(8, 4, 2), 0.5), 4, 2, 1)
 end
 
+function m.vector3MagnitudeAndUnit()
+	assertEqual(Vector3.new(3, 4, 0).Magnitude, 5)
+	assertEqual(Vector3.zero.Magnitude, 0)
+
+	local unit = Vector3.new(3, 4, 0).Unit
+	assertClose(unit.Magnitude, 1, 1e-6, "unit magnitude")
+	assertVector3Equal(Vector3.new(0, 5, 0).Unit, 0, 1, 0)
+end
+
+function m.vector3ZeroUnitIsNaN()
+	local unit = Vector3.zero.Unit
+	assert(unit.X ~= unit.X and unit.Y ~= unit.Y and unit.Z ~= unit.Z, "zero Unit must be NaN components")
+end
+
+function m.vector3MagnitudeTracksArithmetic()
+	local moved = Vector3.new(1, 2, 2) + Vector3.new(2, 2, -2)
+	assertEqual(moved.Magnitude, 5)
+
+	local scaled = Vector3.new(1, 0, 0) * 3
+	assertEqual(scaled.Magnitude, 3)
+	assertVector3Equal(scaled.Unit, 1, 0, 0)
+end
+
 function m.udimArithmetic()
 	local a = UDim.new(0.5, 12)
 	local b = UDim.new(0.25, -2)
