@@ -81,6 +81,42 @@ function m.vector3MagnitudeTracksArithmetic()
 	assertVector3Equal(scaled.Unit, 1, 0, 0)
 end
 
+function m.raycastParamsDefaults()
+	local params = RaycastParams.new()
+
+	assertEqual(params.FilterType, "Exclude")
+	assertEqual(params.IgnoreWater, false)
+	assertEqual(params.BruteForceAllSlow, false)
+	assertEqual(params.RespectCanCollide, false)
+	assertEqual(params.CollisionGroup, "Default")
+	assertEqual(#params.FilterDescendantsInstances, 0)
+	assertEqual(params.ExcludeInstances, nil)
+	assertEqual(params.IncludeInstances, nil)
+end
+
+function m.raycastParamsAddToFilter()
+	local params = RaycastParams.new()
+	local part = Instance.new("Part")
+
+	params:AddToFilter(part)
+	assertEqual(#params.FilterDescendantsInstances, 1)
+	assertEqual(params.FilterDescendantsInstances[1], part)
+
+	params:AddToFilter({ Instance.new("Part"), Instance.new("Part") })
+	assertEqual(#params.FilterDescendantsInstances, 3)
+end
+
+function m.raycastParamsInstancesAreIndependent()
+	local a = RaycastParams.new()
+	local b = RaycastParams.new()
+
+	a.IgnoreWater = true
+	a.FilterDescendantsInstances = { Instance.new("Part") }
+
+	assertEqual(b.IgnoreWater, false)
+	assertEqual(#b.FilterDescendantsInstances, 0)
+end
+
 function m.udimArithmetic()
 	local a = UDim.new(0.5, 12)
 	local b = UDim.new(0.25, -2)

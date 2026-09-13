@@ -12,6 +12,7 @@ The sandbox exposes:
 - `Enum`
 - `Instance`
 - `Random`
+- `RaycastParams`
 - `UDim`
 - `UDim2`
 - `Vector2`
@@ -170,6 +171,22 @@ assert(Vector3.new(0, 5, 0).Unit == Vector3.new(0, 1, 0))
 - multiplication, addition, subtraction, equality, and string conversion
 
 It only tracks position and stored orientation values. Operators do not operate on orientation.
+
+## RaycastParams
+
+`RaycastParams.new()` returns a blank mutable params object with engine defaults (`FilterType` of `"Exclude"`, empty `FilterDescendantsInstances`, `IgnoreWater` off, `CollisionGroup` of `"Default"`). Each call returns an independent object.
+
+`AddToFilter` accepts a single instance or an array of instances:
+
+```lua
+local params = RaycastParams.new()
+params.IgnoreWater = true
+
+params:AddToFilter(workspace.Enemies)
+
+assert(params.FilterType == "Exclude")
+assert(#params.FilterDescendantsInstances == 1)
+```
 
 ## Color3
 

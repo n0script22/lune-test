@@ -7,6 +7,7 @@ local ClassData = require("./ClassData")
 local Color3 = require("./Color3")
 local InstanceModule = require("./Instance")
 local Random = require("./Random")
+local RaycastParams = require("./RaycastParams")
 local Scheduler = require("./Scheduler")
 local Signal = require("./Signal")
 local UDim = require("./UDim")
@@ -1073,6 +1074,7 @@ function Environment:_refreshGlobals()
 		Enum = defaultEnum,
 		Instance = self.Instance,
 		Random = Random,
+		RaycastParams = RaycastParams,
 		UDim = UDim,
 		UDim2 = UDim2,
 		Vector2 = Vector2,
