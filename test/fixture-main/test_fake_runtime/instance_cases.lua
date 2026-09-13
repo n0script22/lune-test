@@ -121,6 +121,26 @@ function m.instanceHierarchyAttributesAndSignals()
 	assert(root:FindFirstChild("Inventory") == nil)
 end
 
+function m.instanceIsDescendantAndAncestorChecks()
+	local env = createEnvironment({
+		activePlayers = {},
+	})
+	local root = env.Instance.new("Folder")
+	local child = env.Instance.new("Folder", root)
+	local grandChild = env.Instance.new("Part", child)
+	local outsider = env.Instance.new("Folder")
+
+	assert(grandChild:IsDescendantOf(root))
+	assert(grandChild:IsDescendantOf(child))
+	assert(child:IsDescendantOf(root))
+	assert(not root:IsDescendantOf(root))
+	assert(not root:IsDescendantOf(child))
+	assert(not grandChild:IsDescendantOf(outsider))
+	assert(root:IsAncestorOf(grandChild))
+	assert(child:IsAncestorOf(grandChild))
+	assert(not grandChild:IsAncestorOf(root))
+end
+
 function m.instanceEventSemanticsAndChildClearing()
 	local env = createEnvironment({
 		activePlayers = {},

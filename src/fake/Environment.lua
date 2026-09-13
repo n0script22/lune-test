@@ -4,12 +4,14 @@ local serde = require("@lune/serde")
 local BrickColor = require("./BrickColor")
 local CFrame = require("./CFrame")
 local ClassData = require("./ClassData")
+local CollisionGroups = require("./CollisionGroups")
 local Color3 = require("./Color3")
 local InstanceModule = require("./Instance")
 local Random = require("./Random")
 local RaycastParams = require("./RaycastParams")
 local Scheduler = require("./Scheduler")
 local Signal = require("./Signal")
+local SpatialQuery = require("./SpatialQuery")
 local UDim = require("./UDim")
 local UDim2 = require("./UDim2")
 local Vector2 = require("./Vector2")
@@ -52,6 +54,24 @@ local defaultEnum = {
 	RaycastFilterType = {
 		Exclude = "Exclude",
 		Include = "Include",
+	},
+	Material = {
+		Plastic = "Plastic",
+		SmoothPlastic = "SmoothPlastic",
+		Wood = "Wood",
+		Metal = "Metal",
+		Glass = "Glass",
+		DiamondPlate = "DiamondPlate",
+		Neon = "Neon",
+		Grass = "Grass",
+		Water = "Water",
+	},
+	PartType = {
+		Ball = "Ball",
+		Block = "Block",
+		Cylinder = "Cylinder",
+		Wedge = "Wedge",
+		CornerWedge = "CornerWedge",
 	},
 }
 
@@ -485,8 +505,8 @@ end
 function Environment:_newInstance(className: string, parent, allowNonCreatable: boolean?)
 	local allowedClassNames = self._availableInstanceTypes
 
-	if allowNonCreatable and not ClassData.isCreatable(className) then
-		allowedClassNames = shallowClone(self._availableInstanceTypes)
+	if allowNonCreatable then
+		allowedClassNames = normalizeSet(ClassData.list(), nil)
 		allowedClassNames.__allowNonCreatable = true
 	end
 
@@ -1003,9 +1023,42 @@ end
 function Environment:_createWorkspaceService()
 	local service = self:_newInstance("Workspace", self.game, true)
 	service.Name = "Workspace"
-	service.Raycast = function(_, _origin, _direction, _raycastParams)
-		return nil
+	service._collisionGroupData = CollisionGroups.new()
+	service.Raycast = function(raycastWorkspace, origin, direction, raycastParams)
+		return SpatialQuery.raycast(raycastWorkspace, origin, direction, raycastParams)
 	end
+	service.Blockcast = function(blockcastWorkspace, cframe, size, direction, raycastParams)
+		return SpatialQuery.blockcast(blockcastWorkspace, cframe, size, direction, raycastParams)
+	end
+	service.Spherecast = function(spherecastWorkspace, position, radius, direction, raycastParams)
+		return SpatialQuery.spherecast(spherecastWorkspace, position, radius, direction, raycastParams)
+	end
+	service.Shapecast = function(shapecastWorkspace, part, direction, raycastParams)
+		return SpatialQuery.shapecast(shapecastWorkspace, part, direction, raycastParams)
+	end
+	service.RegisterCollisionGroup = function(workspaceService, name: string)
+		return CollisionGroups.register(workspaceService._collisionGroupData, name)
+	end
+	service.UnregisterCollisionGroup = function(workspaceService, name: string)
+		return CollisionGroups.unregister(workspaceService._collisionGroupData, name)
+	end
+	service.RenameCollisionGroup = function(workspaceService, fromName: string, toName: string)
+		return CollisionGroups.rename(workspaceService._collisionGroupData, fromName, toName)
+	end
+	service.CollisionGroupSetCollidable = function(workspaceService, groupA: string, groupB: string, collidable: boolean)
+		return CollisionGroups.setCollidable(workspaceService._collisionGroupData, groupA, groupB, collidable)
+	end
+	service.CollisionGroupsAreCollidable = function(workspaceService, groupA: string, groupB: string)
+		return CollisionGroups.areCollidable(workspaceService._collisionGroupData, groupA, groupB)
+	end
+	service.IsCollisionGroupRegistered = function(workspaceService, name: string)
+		return CollisionGroups.isRegistered(workspaceService._collisionGroupData, name)
+	end
+	service.GetRegisteredCollisionGroups = function(workspaceService)
+		return CollisionGroups.list(workspaceService._collisionGroupData)
+	end
+	local terrain = self:_newInstance("Terrain", service, true)
+	terrain.Name = "Terrain"
 	return service
 end
 

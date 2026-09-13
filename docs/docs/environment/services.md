@@ -51,23 +51,63 @@ local module = require(shared.SomeModule)
 
 ## Workspace
 
-`Workspace` is a fake instance with a scriptable `Raycast` stub. It returns `nil` (miss) by default; assign a function per test to script hits. The stub receives `(origin, direction, raycastParams)`:
+`Workspace` holds live 3D objects and supports geometric queries against `BasePart` descendants (including `Workspace.Terrain`). Parts are treated as oriented boxes driven by their `CFrame` and `Size`:
+
+```lua
+local wall = Instance.new("Part", workspace)
+wall.Name = "Wall"
+wall.Position = Vector3.new(5, 0, 0)
+wall.Size = Vector3.new(2, 2, 2)
+
+local hit = workspace:Raycast(Vector3.new(0, 0, 0), Vector3.new(10, 0, 0))
+
+assert(hit.Instance == wall)
+assert(hit.Position == Vector3.new(4, 0, 0))
+assert(hit.Distance == 4)
+assert(hit.Normal == Vector3.new(-1, 0, 0))
+assert(hit.Material == Enum.Material.Plastic)
+```
+
+The direction vector encodes the max distance, so rays shorter than the gap miss. A `nil` result means no eligible part was hit.
+
+Use `ExcludeInstances`/`IncludeInstances` to filter candidates (exclusions win; an empty include list hits nothing):
 
 ```lua
 local params = RaycastParams.new()
-params.FilterType = Enum.RaycastFilterType.Exclude
-params.FilterDescendantsInstances = { character }
-
-assert(workspace:Raycast(origin, direction, params) == nil)
-
-workspace.Raycast = function(_, _origin, _direction, _params)
-	local wall = Instance.new("Part")
-	wall.Name = "Wall"
-	return { Instance = wall }
-end
+params.ExcludeInstances = { character }
 
 local hit = workspace:Raycast(origin, direction, params)
-assert(hit.Instance.Name == "Wall")
+```
+
+Parts with `CanQuery` off are skipped (`RespectCanCollide` swaps the check to `CanCollide`; `BruteForceAllSlow` skips both). Collision groups registered with `RegisterCollisionGroup` participate too: parts whose group is non-collidable with the query `CollisionGroup` are ignored.
+
+```lua
+workspace:RegisterCollisionGroup("Ghosts")
+workspace:RegisterCollisionGroup("Walls")
+workspace:CollisionGroupSetCollidable("Ghosts", "Walls", false)
+
+local params = RaycastParams.new()
+params.CollisionGroup = "Ghosts"
+
+assert(workspace:Raycast(origin, direction, params) == nil)
+```
+
+`Workspace.Terrain` exists by default with an empty volume, so it never hits until a test gives it `Position` and `Size`. Water terrain is skipped when `IgnoreWater` is set:
+
+```lua
+workspace.Terrain.Position = Vector3.new(0, -6, 0)
+workspace.Terrain.Size = Vector3.new(100, 2, 100)
+
+local hit = workspace:Raycast(Vector3.new(0, 10, 0), Vector3.new(0, -30, 0))
+assert(hit.Instance == workspace.Terrain)
+```
+
+Shape queries sweep a volume along a direction and skip parts the shape starts inside. `Ball` parts cast as spheres; other shapes cast as boxes:
+
+```lua
+local hit = workspace:Spherecast(Vector3.new(0, 0, 0), 1, Vector3.new(10, 0, 0))
+local blockHit = workspace:Blockcast(CFrame.new(0, 0, 0), Vector3.new(2, 2, 2), Vector3.new(10, 0, 0))
+local shapeHit = workspace:Shapecast(handle, Vector3.new(10, 0, 0))
 ```
 
 ## RunService

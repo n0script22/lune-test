@@ -1,4 +1,9 @@
+local Vector3 = require("./Vector3")
+
 local ClassData = {}
+
+local DEFAULT_PART_SIZE = Vector3.new(4, 1, 2)
+local EMPTY_TERRAIN_SIZE = Vector3.new(0, 0, 0)
 
 local nonCreatableClasses = {
 	CollectionService = true,
@@ -10,6 +15,7 @@ local nonCreatableClasses = {
 	StarterPlayer = true,
 	StarterPlayerScripts = true,
 	PlayerScripts = true,
+	Terrain = true,
 }
 
 local parentByClass = {
@@ -23,6 +29,7 @@ local parentByClass = {
 	BasePart = "Instance",
 	Part = "BasePart",
 	SpawnLocation = "BasePart",
+	Terrain = "BasePart",
 	NumberValue = "Instance",
 	RemoteEvent = "Instance",
 	RemoteFunction = "Instance",
@@ -54,9 +61,20 @@ local defaultPropsByClass = {
 	BasePart = {
 		Anchored = false,
 		CanCollide = true,
+		CanQuery = true,
+		CanTouch = true,
 		Transparency = 0,
+		Material = "Plastic",
+		CollisionGroup = "Default",
+		Size = DEFAULT_PART_SIZE,
 	},
-	Part = {},
+	Part = {
+		Shape = "Block",
+	},
+	Terrain = {
+		Material = "Grass",
+		Size = EMPTY_TERRAIN_SIZE,
+	},
 	SpawnLocation = {
 		Neutral = true,
 	},

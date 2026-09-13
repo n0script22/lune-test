@@ -154,8 +154,16 @@ local function setBasePartSpatialProperty(self, propertyName: string, value)
 	local properties = rawget(self, "_properties")
 
 	if propertyName == "Position" then
+		local currentCFrame = properties.CFrame
+		local hasRotation = type(currentCFrame) == "table" and currentCFrame._Rotation ~= nil
+
 		properties.Position = value
-		properties.CFrame = CFrame.new(value)
+
+		if hasRotation then
+			properties.CFrame = CFrame.fromMatrix(value, currentCFrame.RightVector, currentCFrame.UpVector)
+		else
+			properties.CFrame = CFrame.new(value)
+		end
 		firePropertyChanged(self, "Position", value)
 		firePropertyChanged(self, "CFrame", properties.CFrame)
 		return true
@@ -385,6 +393,26 @@ end
 
 function InstanceMethods:IsA(className: string)
 	return ClassData.isA(self.ClassName, className)
+end
+
+function InstanceMethods:IsDescendantOf(ancestor): boolean
+	local cursor = rawget(self, "_parent")
+
+	while cursor ~= nil do
+		if cursor == ancestor then
+			return true
+		end
+
+		cursor = rawget(cursor, "_parent")
+	end
+
+	return false
+end
+
+function InstanceMethods:IsAncestorOf(descendant): boolean
+	return type(descendant) == "table"
+		and descendant._isFakeRobloxInstance == true
+		and descendant:IsDescendantOf(self)
 end
 
 function InstanceMethods:GetPropertyChangedSignal(propertyName: string)

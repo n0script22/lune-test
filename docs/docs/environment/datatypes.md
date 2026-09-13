@@ -18,7 +18,7 @@ The sandbox exposes:
 - `Vector2`
 - `Vector3`
 
-`Enum.SortDirection.Ascending` and `Enum.SortDirection.Descending` are available for fake MemoryStore sorted maps. `Enum.RaycastFilterType.Exclude` and `Enum.RaycastFilterType.Include` are available for fake raycasts.
+`Enum.SortDirection.Ascending` and `Enum.SortDirection.Descending` are available for fake MemoryStore sorted maps. `Enum.RaycastFilterType.Exclude` and `Enum.RaycastFilterType.Include` are available for fake raycasts. `Enum.Material` (including `Plastic`, `SmoothPlastic`, `Wood`, `Metal`, `Glass`, `DiamondPlate`, `Neon`, `Grass`, and `Water`) and `Enum.PartType` (`Block`, `Ball`, `Cylinder`, `Wedge`, `CornerWedge`) are available for parts and shape queries.
 
 ## Supported Instance Classes
 
@@ -34,6 +34,7 @@ The fake class table supports:
 - `BasePart`
 - `Part`
 - `SpawnLocation`
+- `Terrain`
 - `NumberValue`
 - `RemoteEvent`
 - `RemoteFunction`
@@ -75,6 +76,8 @@ Fake instances support:
 - `GetChildren()`
 - `GetDescendants()`
 - `IsA(className)`
+- `IsDescendantOf(ancestor)`
+- `IsAncestorOf(descendant)`
 - `GetPropertyChangedSignal(propertyName)`
 - `SetAttribute(attributeName, value)`
 - `GetAttribute(attributeName)`
@@ -89,7 +92,7 @@ Fake instances support:
 
 Common signals include `Changed`, `ChildAdded`, `ChildRemoved`, `Destroying`, `AncestryChanged`, and `AttributeChanged`.
 
-`BasePart` keeps `Position` and `CFrame` in sync. `NumberValue.Changed` fires with the new value when `Value` changes; other instances use the changed property name.
+`BasePart` keeps `Position` and `CFrame` in sync, and setting `Position` preserves the current orientation. New parts default to `Size` of `(4, 1, 2)`, `CanQuery`/`CanCollide`/`CanTouch` on, `Material` of `Plastic`, and the `"Default"` collision group. `Part` adds `Shape` (default `Block`); `Workspace.Terrain` is a `BasePart` with an empty volume until a test sizes it. `NumberValue.Changed` fires with the new value when `Value` changes; other instances use the changed property name.
 
 ```lua
 local value = Instance.new("NumberValue")
@@ -155,26 +158,46 @@ assert(Vector3.new(0, 5, 0).Unit == Vector3.new(0, 1, 0))
 
 ## CFrame
 
-`CFrame` supports:
+`CFrame` tracks a position plus a 3x3 rotation matrix:
 
 - `CFrame.new(x, y, z)`
 - `CFrame.new(vector3)`
+- `CFrame.new(vector3, lookAt)`
+- `CFrame.new(x, y, z, qX, qY, qZ, qW)` (quaternion)
+- `CFrame.new(x, y, z, R00, ...)` (12-number rotation matrix)
 - `CFrame.identity`
-- `CFrame.lookAt(position, target)`
-- `CFrame.Angles(x, y, z)`
+- `CFrame.lookAt(position, target, up?)`
+- `CFrame.lookAlong(position, direction, up?)`
+- `CFrame.fromMatrix(position, xVector, yVector, zVector?)`
+- `CFrame.Angles(x, y, z)` (= `fromEulerAnglesXYZ`)
 - `CFrame.fromEulerAnglesXYZ(x, y, z)`
-- `CFrame.fromOrientation(x, y, z)`
-- `ToOrientation()`
-- `ToEulerAnglesXYZ()`
+- `CFrame.fromEulerAnglesYXZ(x, y, z)`
+- `CFrame.fromOrientation(x, y, z)` (= `fromEulerAnglesYXZ`)
+- `CFrame.fromAxisAngle(axis, angle)`
+- `ToOrientation()` (= `ToEulerAnglesYXZ`)
+- `ToEulerAnglesXYZ()` / `ToEulerAnglesYXZ()` / `ToEulerAngles(order?)`
+- `GetComponents()` / `components`
+- `ToAxisAngle()` / `AngleBetween(other)` / `FuzzyEq(other, epsilon?)`
+- `Orthonormalize()`
+- `ToWorldSpace(cf)` / `ToObjectSpace(cf)`
+- `PointToWorldSpace(v)` / `PointToObjectSpace(v)`
+- `VectorToWorldSpace(v)` / `VectorToObjectSpace(v)`
 - `Lerp(other, alpha)`
 - `Inverse()`
-- multiplication, addition, subtraction, equality, and string conversion
+- `Position`, `Rotation`, `X/Y/Z`, `LookVector`, `RightVector`/`XVector`, `UpVector`/`YVector`, `ZVector`
+- multiplication (compose / transform points), addition, subtraction, equality, and string conversion
 
-It only tracks position and stored orientation values. Operators do not operate on orientation.
+```lua
+local tilted = CFrame.new(5, 0, 0) * CFrame.Angles(0, math.rad(90), 0)
+local point = tilted:PointToWorldSpace(Vector3.new(0, 0, -1))
+
+assert((tilted.LookVector - Vector3.new(-1, 0, 0)).Magnitude < 1e-6)
+assert((point - Vector3.new(4, 0, 0)).Magnitude < 1e-6)
+```
 
 ## RaycastParams
 
-`RaycastParams.new()` returns a blank mutable params object with engine defaults (`FilterType` of `"Exclude"`, empty `FilterDescendantsInstances`, `IgnoreWater` off, `CollisionGroup` of `"Default"`). Each call returns an independent object.
+`RaycastParams.new()` returns a blank mutable params object with engine defaults (`FilterType` of `"Exclude"`, empty `FilterDescendantsInstances`, `IgnoreWater` off, `BruteForceAllSlow` off, `RespectCanCollide` off, `CollisionGroup` of `"Default"`). Each call returns an independent object. Prefer the modern filter lists; the legacy `FilterType`/`FilterDescendantsInstances` pair still works and exclusions always win over inclusions.
 
 `AddToFilter` accepts a single instance or an array of instances:
 
@@ -186,6 +209,35 @@ params:AddToFilter(workspace.Enemies)
 
 assert(params.FilterType == "Exclude")
 assert(#params.FilterDescendantsInstances == 1)
+```
+
+Modern filtering checks self-or-descendant membership:
+
+```lua
+local params = RaycastParams.new()
+params.ExcludeInstances = { character }
+params.IncludeInstances = { workspace.Arena }
+
+local hit = workspace:Raycast(origin, direction, params)
+```
+
+## RaycastResult
+
+Hits return a table with the intersection details:
+
+- `Instance`: the `BasePart` that was hit
+- `Position`: world-space intersection point
+- `Distance`: distance from the ray origin (travel distance for shape casts)
+- `Normal`: face normal at the intersection
+- `Material`: the part material at the intersection
+
+```lua
+local hit = workspace:Raycast(origin, direction)
+
+if hit ~= nil then
+	assert(hit.Instance:IsA("BasePart"))
+	assert(hit.Distance >= 0)
+end
 ```
 
 ## Color3

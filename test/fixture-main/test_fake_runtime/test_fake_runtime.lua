@@ -6,6 +6,7 @@ local modules = {
 	require("./player_cases"),
 	require("./scheduler_and_memory_cases"),
 	require("./docs_cases"),
+	require("./raycast_cases"),
 }
 
 local m = {}
