@@ -202,6 +202,12 @@ local function rayTriangle(origin, direction, a, b, c)
 	return t, n
 end
 
+-- Shared Moller-Trumbore triangle test (double-sided, t is a fraction of the
+-- full direction vector). Exported for reuse by ConvexDecomp.
+function ShapeIntersect.rayTriangle(origin, direction, a, b, c)
+	return rayTriangle(origin, direction, a, b, c)
+end
+
 -- Engine wedge (verified against Studio): tall face at +Z spanning full
 -- height, tapering to the -Z bottom edge. Solid is y <= z in local units.
 local function wedgeTriangles(hx, hy, hz)
