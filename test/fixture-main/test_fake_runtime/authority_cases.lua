@@ -18,22 +18,6 @@ function m.workspaceAuthorityPropertiesHaveEngineDefaults()
 	assertEqual(workspace.StreamingEnabled, true)
 end
 
-function m.settingAuthorityModeServerAutoEnablesRequiredStack()
-	local env = createEnvironment({
-		activePlayers = {},
-		datamodel = {
-			AuthorityMode = "Server",
-		},
-	})
-	local workspace = env.game:GetService("Workspace")
-
-	assertEqual(workspace.AuthorityMode, "Server")
-	assertEqual(workspace.NextGenerationReplication, "Enabled")
-	assertEqual(workspace.SignalBehavior, "Deferred")
-	assertEqual(workspace.UseFixedSimulation, "Enabled")
-	assertEqual(workspace.StreamingEnabled, true)
-end
-
 function m.authorityEnumsAreExposed()
 	local env = createEnvironment({
 		activePlayers = {},
@@ -62,7 +46,7 @@ function m.bindToSimulationRequiresFixedSimulation()
 	assertEqual(ok, false)
 end
 
-function m.bindToSimulationRunsAtFixedFrequencyIndependentOfFramerate()
+function m.bindToAnimationRunsAtFixedFrequency()
 	local env = createEnvironment({
 		activePlayers = {},
 		workspace = {
@@ -71,26 +55,17 @@ function m.bindToSimulationRunsAtFixedFrequencyIndependentOfFramerate()
 	})
 	local runService = env.game:GetService("RunService")
 
-	local count60 = 0
-	local dt60
-	runService:BindToSimulation(function(dt)
-		count60 += 1
-		dt60 = dt
+	local count = 0
+	local dt
+	runService:BindToAnimation(function(step)
+		count += 1
+		dt = step
 	end, "Hz60")
-
-	local count30 = 0
-	local dt30
-	runService:BindToSimulation(function(dt)
-		count30 += 1
-		dt30 = dt
-	end, "Hz30")
 
 	env.scheduler:advance(1)
 
-	assertEqual(count60, 60)
-	assertEqual(count30, 30)
-	assertClose(dt60, 1 / 60, 1e-6, "Hz60 dt")
-	assertClose(dt30, 1 / 30, 1e-6, "Hz30 dt")
+	assertEqual(count, 60)
+	assertClose(dt, 1 / 60, 1e-6, "BindToAnimation Hz60 dt")
 end
 
 function m.bindToSimulationRespectsPriorityOrder()
@@ -142,6 +117,9 @@ function m.simBoundFunctionsRejectUnsynchronizedWrites()
 
 	local writeErr
 	local attrOk
+	local readOk
+	local destroyErr
+	local parentWriteErr
 	runService:BindToSimulation(function()
 		local ok, err = pcall(function()
 			part.Transparency = 0.5
@@ -155,12 +133,35 @@ function m.simBoundFunctionsRejectUnsynchronizedWrites()
 		if attrOk == nil then
 			attrOk = okAttr
 		end
+		local okRead = pcall(function()
+			local _ = part.Transparency
+			local _ = part.Name
+		end)
+		if readOk == nil then
+			readOk = okRead
+		end
+		local okDestroy = pcall(function()
+			part:Destroy()
+		end)
+		if destroyErr == nil then
+			destroyErr = okDestroy
+		end
+		local okParent = pcall(function()
+			part.Parent = nil
+		end)
+		if parentWriteErr == nil then
+			parentWriteErr = okParent
+		end
 	end, "Hz60")
 
 	env.scheduler:advance(1 / 60)
 
 	assertEqual(writeErr, false)
 	assertEqual(attrOk, true)
+	assertEqual(readOk, true)
+	assertEqual(destroyErr, false)
+	assertEqual(parentWriteErr, false)
+	assertEqual(part.Parent ~= nil, true)
 end
 
 function m.simBoundFunctionsAllowPreParentWritesForStitching()
@@ -218,6 +219,29 @@ function m.attributeReplicationFilterDropsNonReplicable()
 	assertEqual(part:GetAttribute(string.rep("n", 51)), 2)
 end
 
+function m.attributeReplicationFilterDropsBeyond64()
+	local env = createEnvironment({
+		activePlayers = {},
+		workspace = {
+			UseFixedSimulation = "Enabled",
+		},
+	})
+	local part = env.Instance.new("Part", env.game:GetService("Workspace"))
+
+	for i = 1, 65 do
+		part:SetAttribute("A" .. tostring(i), i)
+	end
+
+	local replicated = env:getReplicatedAttributes(part)
+	local count = 0
+	for _ in pairs(replicated) do
+		count += 1
+	end
+
+	assertEqual(count, 64)
+	assertEqual(part:GetAttribute("A65"), 65)
+end
+
 function m.stitchedInstancesRequireParentingSameFrame()
 	local env = createEnvironment({
 		activePlayers = {},
@@ -237,6 +261,45 @@ function m.stitchedInstancesRequireParentingSameFrame()
 		env.scheduler:advance(1 / 60)
 	end)
 	assertEqual(ok, false)
+end
+
+function m.stitchedIdsMatchAcrossSidesIncludingClone()
+	local function buildSide()
+		local env = createEnvironment({
+			activePlayers = {},
+			workspace = {
+				UseFixedSimulation = "Enabled",
+			},
+		})
+		local workspace = env.game:GetService("Workspace")
+		local template = env.Instance.new("Part", workspace)
+		template.Name = "Template"
+		local guids = {}
+		env.game:GetService("RunService"):BindToSimulation(function()
+			local fresh = env.Instance.new("Part")
+			fresh.Name = "Fresh"
+			fresh.Parent = workspace
+			local cloned = template:Clone()
+			cloned.Name = "Cloned"
+			cloned.Parent = workspace
+			local existing = env.Instance.fromExisting(template)
+			existing.Name = "Existing"
+			existing.Parent = workspace
+			guids.fresh = fresh._predictedGuid
+			guids.cloned = cloned._predictedGuid
+			guids.existing = existing._predictedGuid
+		end, "Hz60")
+		env.scheduler:advance(1 / 60)
+		return guids
+	end
+
+	local left = buildSide()
+	local right = buildSide()
+
+	assertEqual(left.fresh ~= nil, true)
+	assertEqual(left.fresh, right.fresh)
+	assertEqual(left.cloned, right.cloned)
+	assertEqual(left.existing, right.existing)
 end
 
 function m.rollbackResimulatesBoundFunctionsWithFlagAndEvents()
@@ -273,8 +336,9 @@ function m.rollbackResimulatesBoundFunctionsWithFlagAndEvents()
 	end)
 
 	local runsBefore = simRuns
+	local targetTime = env:getGameTime() - 1 / 60
 	env:forceMispredict({
-		time = env:getGameTime() - 1 / 60,
+		time = targetTime,
 		authoritative = {
 			{ instance = part, attributes = { Health = 100 } },
 		},
@@ -283,8 +347,36 @@ function m.rollbackResimulatesBoundFunctionsWithFlagAndEvents()
 	assertEqual(runService:IsResimulating(), false)
 	assertEqual(sawResimulating, true)
 	assertEqual(simRuns > runsBefore, true)
-	assertEqual(rollbackTime ~= nil, true)
+	assertEqual(rollbackTime, targetTime)
 	assertEqual(mispredicted ~= nil, true)
+	assertEqual(mispredicted.t, targetTime)
+	assertEqual(mispredicted.instances[1].Instance, part)
+	-- Predicted Health was 80 after two ticks of -10 from 100
+	assertEqual(mispredicted.instances[1].Attributes.Health.Predicted, 80)
+	assertEqual(mispredicted.instances[1].Attributes.Health.Authoritative, 100)
+	assertClose(mispredicted.stats.ResimulationTime, 1 / 60, 1e-9, "ResimulationTime covers replayed ticks")
+	-- Resimulation re-applied the sim decrement onto authoritative state
+	assertEqual(part:GetAttribute("Health"), 90)
+end
+
+function m.inspectPredictionReportsSimState()
+	local env = createEnvironment({
+		activePlayers = {},
+		workspace = {
+			UseFixedSimulation = "Enabled",
+		},
+	})
+	local part = env.Instance.new("Part", env.game:GetService("Workspace"))
+	part:SetAttribute("Health", 100)
+	env.game:GetService("RunService"):BindToSimulation(function() end, "Hz60")
+
+	env.scheduler:advance(1 / 60)
+
+	local info = env:inspectPrediction()
+	assertEqual(info.simTick, 1)
+	assertClose(info.simTime, 1 / 60, 1e-9, "inspect simTime")
+	assertEqual(info.isResimulating, false)
+	assertEqual(info.predictedInstanceCount >= 1, true)
 end
 
 return m

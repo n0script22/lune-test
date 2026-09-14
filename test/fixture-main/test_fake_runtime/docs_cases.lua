@@ -367,17 +367,36 @@ function m.schedulerDocsVirtualClockExample()
 	local env = getEnvironment()
 
 	local clock0 = os.clock()
+	local time0 = os.time()
+	local tick0 = tick()
+	local gameTime0 = time()
+	local dist0 = workspace.DistributedGameTime
+	local server0 = workspace:GetServerTimeNow()
+
 	env.scheduler:advance(1.5)
 
 	assert(os.clock() - clock0 == 1.5)
 	assert(time() == env.scheduler:now())
+	assert(os.time() - time0 == 1)
+	assert(tick() - tick0 == 1.5)
+	assert(time() - gameTime0 == 1.5)
+	assert(workspace.DistributedGameTime - dist0 == 1.5)
+	assert(workspace:GetServerTimeNow() - server0 == 1.5)
 end
 
 function m.schedulerDocsHeartbeatAdvancesExample()
 	local env = getEnvironment()
+
+	local hbDt
+	game:GetService("RunService").Heartbeat:Connect(function(dt)
+		hbDt = dt
+	end)
+
 	game:GetService("RunService").Heartbeat:Fire(0.25)
 
 	assert(time() == 0.25)
+	assert(workspace.DistributedGameTime == 0.25)
+	assert(hbDt == 0.25)
 end
 
 function m.servicesDocsAuthorityModeExample()
@@ -388,8 +407,20 @@ function m.servicesDocsAuthorityModeExample()
 	})
 
 	local workspace = env.game:GetService("Workspace")
+	assert(workspace.AuthorityMode == "Server")
+	assert(workspace.NextGenerationReplication == "Enabled")
 	assert(workspace.SignalBehavior == "Deferred")
 	assert(workspace.UseFixedSimulation == "Enabled")
+	assert(workspace.StreamingEnabled == true)
+
+	local legacy = createEnvironment({
+		datamodel = {
+			AuthorityMode = "Server",
+		},
+	})
+	local legacyWorkspace = legacy.game:GetService("Workspace")
+	assert(legacyWorkspace.AuthorityMode == "Server")
+	assert(legacyWorkspace.UseFixedSimulation == "Enabled")
 end
 
 function m.servicesDocsBindToSimulationExample()
@@ -401,12 +432,24 @@ function m.servicesDocsBindToSimulationExample()
 	local runService = env.game:GetService("RunService")
 
 	local count = 0
+	local dt60
 	runService:BindToSimulation(function(dt)
 		count += 1
+		dt60 = dt
 	end, "Hz60")
+
+	local count30 = 0
+	local dt30
+	runService:BindToSimulation(function(dt)
+		count30 += 1
+		dt30 = dt
+	end, "Hz30")
 
 	env.scheduler:advance(1)
 	assert(count == 60)
+	assert(count30 == 30)
+	assert(dt60 == 1 / 60)
+	assert(dt30 == 1 / 30)
 end
 
 return m

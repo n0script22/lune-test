@@ -22,35 +22,7 @@ function m.taskWaitReturnsActualElapsedOnOvershoot()
 	assertClose(elapsed, 1.5, 1e-6, "task.wait actual elapsed")
 end
 
-function m.allTimeSourcesAdvanceTogetherOnOneVirtualClock()
-	local env = createEnvironment({
-		activePlayers = {},
-		virtualClock = {
-			unixBase = 1700000000,
-		},
-	})
-	env:install()
-
-	local clock0 = os.clock()
-	local time0 = os.time()
-	local tick0 = tick()
-	local gameTime0 = time()
-	local dist0 = workspace.DistributedGameTime
-	local server0 = workspace:GetServerTimeNow()
-
-	env.scheduler:advance(1.5)
-
-	assertClose(os.clock() - clock0, 1.5, 1e-6, "os.clock advances with virtual clock")
-	assertEqual(os.time() - time0, 1, "os.time advances 1s (int) after 1.5s virtual")
-	assertClose(tick() - tick0, 1.5, 1e-6, "tick advances with virtual clock")
-	assertClose(time() - gameTime0, 1.5, 1e-6, "time() advances with virtual clock")
-	assertClose(workspace.DistributedGameTime - dist0, 1.5, 1e-6, "DistributedGameTime advances")
-	assertClose(workspace:GetServerTimeNow() - server0, 1.5, 1e-6, "GetServerTimeNow advances")
-
-	env:uninstall()
-end
-
-function m.steppedTimeArgMatchesVirtualClockAndTaskResume()
+function m.steppedTimeArgMatchesVirtualClock()
 	local env = createEnvironment({
 		activePlayers = {},
 	})
@@ -63,39 +35,73 @@ function m.steppedTimeArgMatchesVirtualClockAndTaskResume()
 		steppedDt = dt
 	end)
 
-	local resumed
-	task.spawn(function()
-		resumed = task.wait(1)
-	end)
-	env.scheduler:flush()
 	env.scheduler:advance(1)
 
 	assertClose(steppedTime, time(), 1e-6, "Stepped time == time()")
 	assertClose(steppedTime, workspace.DistributedGameTime, 1e-6, "Stepped time == DistributedGameTime")
 	assertClose(steppedDt, 1, 1e-6, "Stepped dt == advance dt")
-	assertClose(resumed, 1, 1e-6, "task.wait resumes with actual elapsed")
 
 	env:uninstall()
 end
 
-function m.firingHeartbeatAdvancesSameClock()
+function m.preAndPostSimulationFireWithAdvanceDt()
 	local env = createEnvironment({
 		activePlayers = {},
 	})
 	env:install()
 
-	local hbDt
-	game:GetService("RunService").Heartbeat:Connect(function(dt)
-		hbDt = dt
+	local preDt
+	local postDt
+	local runService = game:GetService("RunService")
+	runService.PreSimulation:Connect(function(dt)
+		preDt = dt
+	end)
+	runService.PostSimulation:Connect(function(dt)
+		postDt = dt
 	end)
 
-	game:GetService("RunService").Heartbeat:Fire(0.25)
+	env.scheduler:advance(0.25)
 
-	assertClose(time(), 0.25, 1e-6, "Heartbeat:Fire advances time()")
-	assertClose(workspace.DistributedGameTime, 0.25, 1e-6, "Heartbeat:Fire advances DistributedGameTime")
-	assertClose(hbDt, 0.25, 1e-6, "Heartbeat listener sees fired dt")
+	assertClose(preDt, 0.25, 1e-6, "PreSimulation dt == advance dt")
+	assertClose(postDt, 0.25, 1e-6, "PostSimulation dt == advance dt")
 
 	env:uninstall()
+end
+
+function m.serverTimeRateAndFixedQuantization()
+	local env = createEnvironment({
+		activePlayers = {},
+		virtualClock = {
+			unixBase = 1700000000,
+		},
+	})
+	env:install()
+
+	local server0 = workspace:GetServerTimeNow()
+	env.scheduler:advance(0.5)
+	local server1 = workspace:GetServerTimeNow()
+	env.scheduler:advance(0.5)
+	local server2 = workspace:GetServerTimeNow()
+
+	assertClose(server1 - server0, 0.5, 0.5 * 0.006 + 1e-6, "GetServerTimeNow tracks wall rate within 0.6%")
+	assert(server2 >= server1, "GetServerTimeNow is monotonic")
+
+	env:uninstall()
+
+	local fixed = createEnvironment({
+		activePlayers = {},
+		workspace = {
+			UseFixedSimulation = "Enabled",
+		},
+	})
+	fixed:install()
+
+	-- 0.025s holds 1 full 1/60 tick with remainder carried; time() is fixed-stepped
+	fixed.scheduler:advance(0.025)
+	assertClose(time(), 1 / 60, 1e-9, "time() advances in fixed steps when UseFixedSimulation is enabled")
+	assertClose(workspace.DistributedGameTime, 0.025, 1e-9, "DistributedGameTime stays on wall time")
+
+	fixed:uninstall()
 end
 
 function m.osDateAndDifftimeFollowVirtualClock()
