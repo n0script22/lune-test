@@ -1,4 +1,5 @@
 local Vector3 = require("./Vector3")
+local ConvexDecomp = require("./ConvexDecomp")
 local SweepFrame = require("./SweepFrame")
 
 local EPSILON = SweepFrame.EPSILON
@@ -460,6 +461,32 @@ function SweepSphere.sweepSphereVsCorner(origin, direction, hx, hy, hz, movingRa
 	end, function(p)
 		return distPointCorner(p, hx, hy, hz)
 	end)
+end
+
+-- Sphere caster vs a union/mesh decomposition (world convexes). Sweeps each
+-- convex separately (each is convex, so the ternary search stays exact) and
+-- keeps the closest hit. A center starting inside any convex misses.
+function SweepSphere.sweepSphereVsConvexList(origin, direction, movingRadius, worldConvexes)
+	if ConvexDecomp.pointStrictlyInConvexes(origin, worldConvexes) then
+		return nil
+	end
+
+	local best = nil
+
+	for _, convex in ipairs(worldConvexes) do
+		local single = { convex }
+		local hit = sweepSphereVsConvex(origin, direction, movingRadius, function(p)
+			return ConvexDecomp.pointStrictlyInConvexes(p, single)
+		end, function(p)
+			return ConvexDecomp.distPointConvex(p, convex)
+		end)
+
+		if hit ~= nil and (best == nil or hit.t < best.t) then
+			best = hit
+		end
+	end
+
+	return best
 end
 
 -- Wedge/corner caster vs sphere target via role-swap (static wedge, moving

@@ -1,6 +1,8 @@
 local PartAccess = require("./PartAccess")
 local QueryFilter = require("./QueryFilter")
 local ShapeIntersect = require("./ShapeIntersect")
+local ConvexDecomp = require("./ConvexDecomp")
+local CsgOperations = require("./CsgOperations")
 local SweepBox = require("./SweepBox")
 local SweepConvex = require("./SweepConvex")
 local SweepFrame = require("./SweepFrame")
@@ -17,6 +19,37 @@ local getPartPosition = PartAccess.getPartPosition
 local getPartCFrame = PartAccess.getPartCFrame
 local getPartShape = PartAccess.getPartShape
 
+-- World convexes for union/mesh targets needing the decomposition path, or
+-- nil when the existing analytic path applies (plain Parts, Box fidelity).
+-- Hull resolves to a single hull convex up front.
+local function unionTargetList(part)
+	if part.ClassName ~= "UnionOperation" and part.ClassName ~= "MeshPart" then
+		return nil
+	end
+
+	local fidelity = PartAccess.getCollisionFidelity(part)
+
+	if fidelity == "Box" then
+		return nil
+	end
+
+	local world = CsgOperations.worldConvexesOfPart(part)
+
+	if world == nil or #world == 0 then
+		return nil
+	end
+
+	if fidelity == "Hull" then
+		return { ConvexDecomp.convexHullOfVerts(ConvexDecomp.allVerts(world)) }
+	end
+
+	return world
+end
+
+local function sweepDistance(direction): number
+	return math.sqrt(direction.X * direction.X + direction.Y * direction.Y + direction.Z * direction.Z)
+end
+
 local function assertSweepDirection(direction, methodName: string, maxDistance: number): number
 	assert(isVector3Like(direction), `{methodName} direction must be a Vector3`)
 
@@ -30,6 +63,22 @@ end
 local function sweepSphereVsPart(part, origin, direction, radius)
 	local size = getPartSize(part)
 	local partCFrame = getPartCFrame(part)
+	local unionList = unionTargetList(part)
+
+	if unionList ~= nil then
+		local sweep = SweepSphere.sweepSphereVsConvexList(origin, direction, radius, unionList)
+
+		if sweep == nil then
+			return nil
+		end
+
+		return {
+			t = sweep.t,
+			distance = sweep.t * sweepDistance(direction),
+			position = sweep.contact,
+			normal = sweep.normal,
+		}
+	end
 
 	if getPartShape(part) == "Ball" then
 		local center = if partCFrame ~= nil then partCFrame.Position else getPartPosition(part)
@@ -137,6 +186,42 @@ local function sweepBoxVsPart(part, castCenter0, castCols, castHalf, direction)
 	local size = getPartSize(part)
 	local partHalf = Vector3.new(size.X / 2, size.Y / 2, size.Z / 2)
 	local partCFrame = getPartCFrame(part)
+	local unionList = unionTargetList(part)
+
+	if unionList ~= nil then
+		local caster = SweepConvex.boxConvex(castCenter0, castCols, castHalf)
+
+		for _, target in ipairs(unionList) do
+			if ConvexDecomp.convexesOverlap(caster, target) then
+				return nil
+			end
+		end
+
+		local bestT = nil
+		local bestNormal = nil
+		local bestTarget = nil
+
+		for _, target in ipairs(unionList) do
+			local t, normal = SweepConvex.sweepConvexVsConvex(caster, direction, target)
+
+			if t ~= nil and (bestT == nil or t < bestT) then
+				bestT = t
+				bestNormal = normal
+				bestTarget = target
+			end
+		end
+
+		if bestT == nil then
+			return nil
+		end
+
+		return {
+			t = bestT,
+			distance = bestT * sweepDistance(direction),
+			position = ConvexDecomp.supportPoint(bestTarget, bestNormal),
+			normal = bestNormal,
+		}
+	end
 
 	-- Engine (verified against Studio): Blockcast vs Ball is exact
 	-- box-vs-sphere, not box-vs-box.
@@ -274,6 +359,45 @@ local function sweepWedgeVsPart(
 	local maxDistance =
 		math.sqrt(direction.X * direction.X + direction.Y * direction.Y + direction.Z * direction.Z)
 
+	local casterConvex = if isCorner
+		then SweepConvex.cornerConvex(castCenter0, castCols, hx, hy, hz)
+		else SweepConvex.wedgeConvex(castCenter0, castCols, hx, hy, hz)
+
+	local unionList = unionTargetList(targetPart)
+
+	if unionList ~= nil then
+		for _, target in ipairs(unionList) do
+			if ConvexDecomp.convexesOverlap(casterConvex, target) then
+				return nil
+			end
+		end
+
+		local bestT = nil
+		local bestNormal = nil
+		local bestTarget = nil
+
+		for _, target in ipairs(unionList) do
+			local t, normal = SweepConvex.sweepConvexVsConvex(casterConvex, direction, target)
+
+			if t ~= nil and (bestT == nil or t < bestT) then
+				bestT = t
+				bestNormal = normal
+				bestTarget = target
+			end
+		end
+
+		if bestT == nil then
+			return nil
+		end
+
+		return {
+			t = bestT,
+			distance = bestT * maxDistance,
+			position = ConvexDecomp.supportPoint(bestTarget, bestNormal),
+			normal = bestNormal,
+		}
+	end
+
 	if targetShape == "Ball" then
 		local center = if partCFrame ~= nil then partCFrame.Position else getPartPosition(targetPart)
 		local radius = math.min(targetSize.X, targetSize.Y, targetSize.Z) / 2
@@ -301,10 +425,6 @@ local function sweepWedgeVsPart(
 			normal = sweep.normal,
 		}
 	end
-
-	local casterConvex = if isCorner
-		then SweepConvex.cornerConvex(castCenter0, castCols, hx, hy, hz)
-		else SweepConvex.wedgeConvex(castCenter0, castCols, hx, hy, hz)
 
 	local targetConvex
 	if targetShape == "Cylinder" then

@@ -218,4 +218,135 @@ function m.unionAsyncRejectsInvalidSources()
 	end), "UnionAsync on non-BasePart must error")
 end
 
+function m.spherecastVsUnionNotchMatchesRay()
+	local env = createEnvironment({
+		activePlayers = {},
+	})
+	local workspace = env.globals.Workspace
+
+	local a = env.Instance.new("Part", workspace)
+	a.Size = Vector3.new(4, 4, 4)
+	a.CFrame = CFrame.new(0, 600, 0)
+
+	local b = env.Instance.new("Part", workspace)
+	b.Size = Vector3.new(4, 4, 4)
+	b.CFrame = CFrame.new(1, 602, 0)
+
+	local u = a:UnionAsync({ b }, Enum.CollisionFidelity.PreciseConvexDecomposition)
+	assert(u ~= nil, "expected union result")
+	u.Parent = workspace
+	a:Destroy()
+	b:Destroy()
+
+	u.CollisionFidelity = Enum.CollisionFidelity.PreciseConvexDecomposition
+	assertEqual(
+		workspace:Spherecast(Vector3.new(-1.5, 603, -10), 0.25, Vector3.new(0, 0, 20)),
+		nil
+	)
+
+	u.CollisionFidelity = Enum.CollisionFidelity.Box
+	local boxHit =
+		workspace:Spherecast(Vector3.new(-1.5, 603, -10), 0.25, Vector3.new(0, 0, 20))
+	assert(boxHit ~= nil, "Box fidelity must hit the notch volume")
+	assertEqual(boxHit.Instance, u)
+	assertEqual(boxHit.Normal, Vector3.new(0, 0, -1))
+	assertClose(boxHit.Distance, 7.75, 1e-6, "notch distance")
+
+	u.CollisionFidelity = Enum.CollisionFidelity.PreciseConvexDecomposition
+	local hit = workspace:Spherecast(Vector3.new(1, 600, -10), 0.5, Vector3.new(0, 0, 20))
+	assert(hit ~= nil, "solid spherecast must hit")
+	assertEqual(hit.Instance, u)
+	assertClose(hit.Distance, 7.5, 1e-6, "solid distance")
+	assertClose(hit.Position.Z, -2, 1e-6, "solid hit z")
+	assertEqual(hit.Normal, Vector3.new(0, 0, -1))
+end
+
+function m.blockcastVsUnionHullHitsNotch()
+	local env = createEnvironment({
+		activePlayers = {},
+	})
+	local workspace = env.globals.Workspace
+
+	local a = env.Instance.new("Part", workspace)
+	a.Size = Vector3.new(4, 4, 4)
+	a.CFrame = CFrame.new(0, 600, 0)
+
+	local b = env.Instance.new("Part", workspace)
+	b.Size = Vector3.new(4, 4, 4)
+	b.CFrame = CFrame.new(1, 602, 0)
+
+	local u = a:UnionAsync({ b })
+	assert(u ~= nil, "expected union result")
+	u.Parent = workspace
+	a:Destroy()
+	b:Destroy()
+
+	u.CollisionFidelity = Enum.CollisionFidelity.Hull
+	local hullHit = workspace:Blockcast(
+		CFrame.new(-1.5, 602.75, -10),
+		Vector3.new(0.5, 0.5, 0.5),
+		Vector3.new(0, 0, 20),
+		RaycastParams.new()
+	)
+	assert(hullHit ~= nil, "Hull must cover the notch rind")
+	assertEqual(hullHit.Instance, u)
+
+	u.CollisionFidelity = Enum.CollisionFidelity.PreciseConvexDecomposition
+	assertEqual(
+		workspace:Blockcast(
+			CFrame.new(-1.5, 602.75, -10),
+			Vector3.new(0.5, 0.5, 0.5),
+			Vector3.new(0, 0, 20),
+			RaycastParams.new()
+		),
+		nil
+	)
+
+	local solidHit = workspace:Blockcast(
+		CFrame.new(1, 600, -10),
+		Vector3.new(1, 1, 1),
+		Vector3.new(0, 0, 20),
+		RaycastParams.new()
+	)
+	assert(solidHit ~= nil, "solid blockcast must hit")
+	assertEqual(solidHit.Instance, u)
+	assertClose(solidHit.Distance, 7.5, 1e-6, "solid distance")
+	assertClose(solidHit.Position.Z, -2, 1e-6, "solid hit z")
+	assertEqual(solidHit.Normal, Vector3.new(0, 0, -1))
+end
+
+function m.shapecastWedgeCasterVsUnionTarget()
+	local env = createEnvironment({
+		activePlayers = {},
+	})
+	local workspace = env.globals.Workspace
+
+	local a = env.Instance.new("Part", workspace)
+	a.Size = Vector3.new(4, 4, 4)
+	a.CFrame = CFrame.new(0, 700, 0)
+
+	local b = env.Instance.new("Part", workspace)
+	b.Size = Vector3.new(4, 4, 4)
+	b.CFrame = CFrame.new(1, 702, 0)
+
+	local u = a:UnionAsync({ b })
+	assert(u ~= nil, "expected union result")
+	u.Parent = workspace
+	a:Destroy()
+	b:Destroy()
+
+	local cast = env.Instance.new("Part", workspace)
+	cast.Shape = Enum.PartType.Wedge
+	cast.Size = Vector3.new(0.5, 0.5, 0.5)
+	cast.CFrame = CFrame.new(-1.5, 703, -10)
+
+	u.CollisionFidelity = Enum.CollisionFidelity.PreciseConvexDecomposition
+	assertEqual(workspace:Shapecast(cast, Vector3.new(0, 0, 20), RaycastParams.new()), nil)
+
+	u.CollisionFidelity = Enum.CollisionFidelity.Box
+	local hit = workspace:Shapecast(cast, Vector3.new(0, 0, 20), RaycastParams.new())
+	assert(hit ~= nil, "Box fidelity must hit the notch volume")
+	assertEqual(hit.Instance, u)
+end
+
 return m

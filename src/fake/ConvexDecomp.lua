@@ -602,4 +602,202 @@ function ConvexDecomp.supportPoint(worldConvex, direction)
 	return best
 end
 
+local function distPointSegment(p, a, b)
+	local ab = b - a
+	local lenSq = ab:Dot(ab)
+
+	if lenSq <= 1e-18 then
+		local off = p - a
+		return math.sqrt(off:Dot(off)), a
+	end
+
+	local t = (p - a):Dot(ab) / lenSq
+
+	if t < 0 then
+		t = 0
+	elseif t > 1 then
+		t = 1
+	end
+
+	local q = a + ab * t
+	local off = p - q
+
+	return math.sqrt(off:Dot(off)), q
+end
+
+-- Ericson 5.1.5 closest point on triangle (double-sided).
+local function distPointTriangle(p, a, b, c)
+	local ab = b - a
+	local ac = c - a
+	local ap = p - a
+	local d1 = ab:Dot(ap)
+	local d2 = ac:Dot(ap)
+
+	if d1 <= 0 and d2 <= 0 then
+		local off = p - a
+		return math.sqrt(off:Dot(off)), a
+	end
+
+	local bp = p - b
+	local d3 = ab:Dot(bp)
+	local d4 = ac:Dot(bp)
+
+	if d3 >= 0 and d4 <= d3 then
+		local off = p - b
+		return math.sqrt(off:Dot(off)), b
+	end
+
+	local vc = d1 * d4 - d3 * d2
+
+	if vc <= 0 and d1 >= 0 and d3 <= 0 then
+		local v = d1 / (d1 - d3)
+		local q = a + ab * v
+		local off = p - q
+		return math.sqrt(off:Dot(off)), q
+	end
+
+	local cp = p - c
+	local d5 = ab:Dot(cp)
+	local d6 = ac:Dot(cp)
+
+	if d6 >= 0 and d5 <= d6 then
+		local off = p - c
+		return math.sqrt(off:Dot(off)), c
+	end
+
+	local vb = d5 * d2 - d1 * d6
+
+	if vb <= 0 and d2 >= 0 and d6 <= 0 then
+		local w = d2 / (d2 - d6)
+		local q = a + ac * w
+		local off = p - q
+		return math.sqrt(off:Dot(off)), q
+	end
+
+	local va = d3 * d6 - d5 * d4
+
+	if va <= 0 and (d4 - d3) >= 0 and (d5 - d6) >= 0 then
+		local bc = c - b
+		local w = (d4 - d3) / ((d4 - d3) + (d5 - d6))
+		local q = b + bc * w
+		local off = p - q
+		return math.sqrt(off:Dot(off)), q
+	end
+
+	local denom = va + vb + vc
+
+	if math.abs(denom) <= 1e-18 then
+		return distPointSegment(p, a, b)
+	end
+
+	local v = vb / denom
+	local w = vc / denom
+	local q = a + ab * v + ac * w
+	local off = p - q
+
+	return math.sqrt(off:Dot(off)), q
+end
+
+-- Closest distance from a point to a world convex plus the closest surface
+-- point. Frame-agnostic (works on any finished convex).
+function ConvexDecomp.distPointConvex(p, convex)
+	local bestDist = nil
+	local bestQ = nil
+
+	for _, f in ipairs(convex.faces) do
+		local a, b, c = convex.verts[f[1]], convex.verts[f[2]], convex.verts[f[3]]
+		local area2 = (b - a):Cross(c - a).Magnitude
+		local d, q
+
+		if area2 <= 1e-12 then
+			d, q = distPointSegment(p, a, b)
+			local d2, q2 = distPointSegment(p, b, c)
+			if d2 < d then
+				d, q = d2, q2
+			end
+			local d3, q3 = distPointSegment(p, c, a)
+			if d3 < d then
+				d, q = d3, q3
+			end
+		else
+			d, q = distPointTriangle(p, a, b, c)
+		end
+
+		if bestDist == nil or d < bestDist then
+			bestDist = d
+			bestQ = q
+		end
+	end
+
+	return bestDist, bestQ
+end
+
+function ConvexDecomp.distPointConvexes(p, list)
+	local bestDist = nil
+	local bestQ = nil
+
+	for _, convex in ipairs(list) do
+		local d, q = ConvexDecomp.distPointConvex(p, convex)
+
+		if bestDist == nil or d < bestDist then
+			bestDist = d
+			bestQ = q
+		end
+	end
+
+	return bestDist, bestQ
+end
+
+-- Static SAT overlap between two finished world convexes. Mirrors the
+-- separating thresholds of SweepConvex.sweepConvexVsConvex.
+function ConvexDecomp.convexesOverlap(a, b): boolean
+	local eps = SweepFrame.SAT_OVERLAP_EPS
+	local axes = {}
+
+	for _, n in ipairs(a.normals) do
+		table.insert(axes, n)
+	end
+	for _, n in ipairs(b.normals) do
+		table.insert(axes, n)
+	end
+	for _, e1 in ipairs(a.edges) do
+		for _, e2 in ipairs(b.edges) do
+			local cross = e1:Cross(e2)
+			if cross.Magnitude > 1e-8 then
+				table.insert(axes, cross / cross.Magnitude)
+			end
+		end
+	end
+
+	for _, axis in ipairs(axes) do
+		local aMin, aMax, bMin, bMax = nil, nil, nil, nil
+
+		for _, v in ipairs(a.verts) do
+			local proj = axis:Dot(v)
+			if aMin == nil or proj < aMin then
+				aMin = proj
+			end
+			if aMax == nil or proj > aMax then
+				aMax = proj
+			end
+		end
+
+		for _, v in ipairs(b.verts) do
+			local proj = axis:Dot(v)
+			if bMin == nil or proj < bMin then
+				bMin = proj
+			end
+			if bMax == nil or proj > bMax then
+				bMax = proj
+			end
+		end
+
+		if aMax < bMin - eps or bMax < aMin - eps then
+			return false
+		end
+	end
+
+	return true
+end
+
 return ConvexDecomp
