@@ -741,4 +741,261 @@ function m.meshPartWithoutDataSweepsAsBox()
 	assertClose(blockHit.Distance, 7.5, 1e-6, "block distance")
 end
 
+function m.sweepsIgnoreOverlappingUnions()
+	local env = createEnvironment({
+		activePlayers = {},
+	})
+	local workspace = env.globals.Workspace
+
+	local a = env.Instance.new("Part", workspace)
+	a.Size = Vector3.new(4, 4, 4)
+	a.CFrame = CFrame.new(0, 2100, 0)
+
+	local b = env.Instance.new("Part", workspace)
+	b.Size = Vector3.new(4, 4, 4)
+	b.CFrame = CFrame.new(1, 2102, 0)
+
+	local u = a:UnionAsync({ b }, Enum.CollisionFidelity.PreciseConvexDecomposition)
+	assert(u ~= nil, "expected union result")
+	u.Parent = workspace
+	a:Destroy()
+	b:Destroy()
+
+	u.CollisionFidelity = Enum.CollisionFidelity.PreciseConvexDecomposition
+	assertEqual(
+		workspace:Spherecast(Vector3.new(1, 2100, 0), 0.5, Vector3.new(0, 0, 20)),
+		nil
+	)
+	assertEqual(
+		workspace:Blockcast(
+			CFrame.new(1, 2100, 0),
+			Vector3.new(1, 1, 1),
+			Vector3.new(0, 0, 20),
+			RaycastParams.new()
+		),
+		nil
+	)
+end
+
+function m.unionCasterAloneAndOverlappingMiss()
+	local env = createEnvironment({
+		activePlayers = {},
+	})
+	local workspace = env.globals.Workspace
+
+	local a = env.Instance.new("Part", workspace)
+	a.Size = Vector3.new(4, 4, 4)
+	a.CFrame = CFrame.new(0, 2150, 0)
+
+	local b = env.Instance.new("Part", workspace)
+	b.Size = Vector3.new(4, 4, 4)
+	b.CFrame = CFrame.new(1, 2152, 0)
+
+	local cast = a:UnionAsync({ b }, Enum.CollisionFidelity.PreciseConvexDecomposition)
+	assert(cast ~= nil, "expected union caster")
+	cast.Parent = workspace
+	a:Destroy()
+	b:Destroy()
+
+	cast.CollisionFidelity = Enum.CollisionFidelity.PreciseConvexDecomposition
+	assertEqual(workspace:Shapecast(cast, Vector3.new(0, 0, 20), RaycastParams.new()), nil)
+
+	local wall = env.Instance.new("Part", workspace)
+	wall.Size = Vector3.new(4, 4, 4)
+	wall.CFrame = CFrame.new(0.5, 2151, 0)
+
+	assertEqual(workspace:Shapecast(cast, Vector3.new(0, 0, 20), RaycastParams.new()), nil)
+end
+
+function m.unionRespectsCanQueryAndGroups()
+	local env = createEnvironment({
+		activePlayers = {},
+	})
+	local workspace = env.globals.Workspace
+
+	workspace:RegisterCollisionGroup("Ghosts")
+	workspace:RegisterCollisionGroup("Walls")
+	workspace:CollisionGroupSetCollidable("Ghosts", "Walls", false)
+
+	local a = env.Instance.new("Part", workspace)
+	a.Size = Vector3.new(4, 4, 4)
+	a.CFrame = CFrame.new(0, 2300, 0)
+
+	local b = env.Instance.new("Part", workspace)
+	b.Size = Vector3.new(4, 4, 4)
+	b.CFrame = CFrame.new(1, 2302, 0)
+
+	local u = a:UnionAsync({ b }, Enum.CollisionFidelity.PreciseConvexDecomposition)
+	assert(u ~= nil, "expected union result")
+	u.Parent = workspace
+	u.CollisionGroup = "Walls"
+	a:Destroy()
+	b:Destroy()
+
+	u.CanQuery = false
+	assertEqual(
+		workspace:Raycast(Vector3.new(1, 2300, -10), Vector3.new(0, 0, 20), RaycastParams.new()),
+		nil
+	)
+
+	u.CanQuery = true
+	local ghostParams = RaycastParams.new()
+	ghostParams.CollisionGroup = "Ghosts"
+	assertEqual(
+		workspace:Raycast(Vector3.new(1, 2300, -10), Vector3.new(0, 0, 20), ghostParams),
+		nil
+	)
+
+	local wallParams = RaycastParams.new()
+	wallParams.CollisionGroup = "Walls"
+	local hit =
+		workspace:Raycast(Vector3.new(1, 2300, -10), Vector3.new(0, 0, 20), wallParams)
+	assert(hit ~= nil, "same-group ray must hit the union")
+	assertEqual(hit.Instance, u)
+end
+
+function m.unionIgnoresDecorativeProperties()
+	local env = createEnvironment({
+		activePlayers = {},
+	})
+	local workspace = env.globals.Workspace
+
+	local a = env.Instance.new("Part", workspace)
+	a.Size = Vector3.new(4, 4, 4)
+	a.CFrame = CFrame.new(0, 2400, 0)
+
+	local b = env.Instance.new("Part", workspace)
+	b.Size = Vector3.new(4, 4, 4)
+	b.CFrame = CFrame.new(1, 2402, 0)
+
+	local u = a:UnionAsync({ b }, Enum.CollisionFidelity.PreciseConvexDecomposition)
+	assert(u ~= nil, "expected union result")
+	u.Parent = workspace
+	u.Transparency = 1
+	u.Anchored = false
+	u.CanTouch = false
+	a:Destroy()
+	b:Destroy()
+
+	local hit =
+		workspace:Raycast(Vector3.new(1, 2400, -10), Vector3.new(0, 0, 20), RaycastParams.new())
+	assert(hit ~= nil, "decorative flags must not affect union queries")
+	assertEqual(hit.Instance, u)
+end
+
+function m.renderFidelityDoesNotAffectQueries()
+	local env = createEnvironment({
+		activePlayers = {},
+	})
+	local workspace = env.globals.Workspace
+
+	local a = env.Instance.new("Part", workspace)
+	a.Size = Vector3.new(4, 4, 4)
+	a.CFrame = CFrame.new(0, 2450, 0)
+
+	local b = env.Instance.new("Part", workspace)
+	b.Size = Vector3.new(4, 4, 4)
+	b.CFrame = CFrame.new(1, 2452, 0)
+
+	local u = a:UnionAsync({ b }, Enum.CollisionFidelity.PreciseConvexDecomposition)
+	assert(u ~= nil, "expected union result")
+	u.Parent = workspace
+	a:Destroy()
+	b:Destroy()
+
+	u.RenderFidelity = Enum.RenderFidelity.Performance
+	u.CollisionFidelity = Enum.CollisionFidelity.PreciseConvexDecomposition
+	assertEqual(
+		workspace:Raycast(Vector3.new(-1.5, 2453, -10), Vector3.new(0, 0, 20)),
+		nil
+	)
+	assert(
+		workspace:Raycast(Vector3.new(1, 2450, -10), Vector3.new(0, 0, 20)) ~= nil,
+		"solid must hit regardless of render fidelity"
+	)
+end
+
+function m.meshIdDoesNotChangeEmptyMeshBox()
+	local env = createEnvironment({
+		activePlayers = {},
+	})
+	local workspace = env.globals.Workspace
+
+	-- The offline runner cannot fetch mesh assets, so a MeshId never alters
+	-- the box fallback. This pins that limitation explicitly.
+	local mp = env.Instance.new("MeshPart", workspace)
+	mp.Size = Vector3.new(4, 4, 4)
+	mp.CFrame = CFrame.new(0, 2500, 0)
+	mp.MeshId = "rbxassetid://123"
+
+	local hit =
+		workspace:Raycast(Vector3.new(0, 2500, -10), Vector3.new(0, 0, 20), RaycastParams.new())
+	assert(hit ~= nil, "meshed part must still cast as its box")
+	assertEqual(hit.Instance, mp)
+end
+
+function m.largeCoordinateUnionKeepsNotch()
+	local env = createEnvironment({
+		activePlayers = {},
+	})
+	local workspace = env.globals.Workspace
+
+	local a = env.Instance.new("Part", workspace)
+	a.Size = Vector3.new(4, 4, 4)
+	a.CFrame = CFrame.new(0, 50000, 0)
+
+	local b = env.Instance.new("Part", workspace)
+	b.Size = Vector3.new(4, 4, 4)
+	b.CFrame = CFrame.new(1, 50002, 0)
+
+	local u = a:UnionAsync({ b }, Enum.CollisionFidelity.PreciseConvexDecomposition)
+	assert(u ~= nil, "expected union result")
+	u.Parent = workspace
+	a:Destroy()
+	b:Destroy()
+
+	u.CollisionFidelity = Enum.CollisionFidelity.PreciseConvexDecomposition
+	assertEqual(
+		workspace:Raycast(Vector3.new(-1.5, 50003, -10), Vector3.new(0, 0, 20)),
+		nil
+	)
+
+	local hit =
+		workspace:Raycast(Vector3.new(1, 50000, -10), Vector3.new(0, 0, 20))
+	assert(hit ~= nil, "far solid must hit")
+	assertEqual(hit.Instance, u)
+	assertClose(hit.Distance, 8, 1e-3, "far distance")
+end
+
+function m.spherecastHitsSizedTerrain()
+	local env = createEnvironment({
+		activePlayers = {},
+	})
+	local workspace = env.globals.Workspace
+
+	workspace.Terrain.Position = Vector3.new(0, 2544, 0)
+	workspace.Terrain.Size = Vector3.new(100, 2, 100)
+
+	local hit = workspace:Spherecast(Vector3.new(0, 2560, 0), 1, Vector3.new(0, -30, 0))
+	assert(hit ~= nil, "sphere must hit sized terrain")
+	assertEqual(hit.Instance, workspace.Terrain)
+	assertClose(hit.Distance, 14, 1e-4, "terrain distance")
+end
+
+function m.raycastHitsSpawnLocation()
+	local env = createEnvironment({
+		activePlayers = {},
+	})
+	local workspace = env.globals.Workspace
+
+	local spawn = env.Instance.new("SpawnLocation", workspace)
+	spawn.Position = Vector3.new(0, 0, 0)
+	spawn.Size = Vector3.new(4, 1, 2)
+
+	local hit =
+		workspace:Raycast(Vector3.new(0, 0, -10), Vector3.new(0, 0, 20), RaycastParams.new())
+	assert(hit ~= nil, "ray must hit the spawn")
+	assertEqual(hit.Instance, spawn)
+end
+
 return m
