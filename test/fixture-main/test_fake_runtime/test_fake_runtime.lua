@@ -7,7 +7,8 @@ local modules = {
 	require("./scheduler_and_memory_cases"),
 	require("./docs_cases"),
 	require("./raycast_cases"),
-	require("./union_cases"),
+	require("./union_csg_cases"),
+	require("./union_query_cases"),
 }
 
 local m = {}
