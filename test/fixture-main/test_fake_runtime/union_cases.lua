@@ -1,5 +1,6 @@
 local TestHelpers = require("@test/test_helpers")
 
+local assertClose = TestHelpers.assertClose
 local assertEqual = TestHelpers.assertEqual
 
 local m = {}
@@ -30,11 +31,74 @@ function m.unionAsyncBuildsConcaveUnion()
 	assertEqual(u.CollisionFidelity, Enum.CollisionFidelity.PreciseConvexDecomposition)
 	assertEqual(u.RenderFidelity, Enum.RenderFidelity.Precise)
 
-	-- Pre-fidelity-dispatch (Task 5 wires fidelity): union casts as its box.
+	-- Exact notch (outside both boxes, inside the bounding box): Precise
+	-- misses, Box hits.
+	assertEqual(
+		workspace:Raycast(Vector3.new(-1.5, 103, -10), Vector3.new(0, 0, 20), RaycastParams.new()),
+		nil
+	)
+
+	u.CollisionFidelity = Enum.CollisionFidelity.Box
 	local notchHit =
 		workspace:Raycast(Vector3.new(-1.5, 103, -10), Vector3.new(0, 0, 20), RaycastParams.new())
-	assert(notchHit ~= nil, "union bounding box must hit before fidelity dispatch")
+	assert(notchHit ~= nil, "Box fidelity must hit the notch bounding volume")
 	assertEqual(notchHit.Instance, u)
+end
+
+function m.raycastUnionHullCoversNotchWhileDefaultMisses()
+	local env = createEnvironment({
+		activePlayers = {},
+	})
+	local workspace = env.globals.Workspace
+
+	local a = env.Instance.new("Part", workspace)
+	a.Size = Vector3.new(4, 4, 4)
+	a.CFrame = CFrame.new(0, 100, 0)
+
+	local b = env.Instance.new("Part", workspace)
+	b.Size = Vector3.new(4, 4, 4)
+	b.CFrame = CFrame.new(1, 102, 0)
+
+	local u = a:UnionAsync({ b })
+	assert(u ~= nil, "expected union result")
+	u.Parent = workspace
+	a:Destroy()
+	b:Destroy()
+
+	-- (-1.5, 102.5) is outside both boxes but inside the convex hull rind.
+	local notchOrigin = Vector3.new(-1.5, 102.5, -10)
+	local notchDirection = Vector3.new(0, 0, 20)
+
+	u.CollisionFidelity = Enum.CollisionFidelity.Box
+	assert(
+		workspace:Raycast(notchOrigin, notchDirection, RaycastParams.new()) ~= nil,
+		"Box must hit the notch volume"
+	)
+
+	u.CollisionFidelity = Enum.CollisionFidelity.Hull
+	assert(
+		workspace:Raycast(notchOrigin, notchDirection, RaycastParams.new()) ~= nil,
+		"Hull must cover the notch rind"
+	)
+
+	u.CollisionFidelity = Enum.CollisionFidelity.Default
+	assertEqual(workspace:Raycast(notchOrigin, notchDirection, RaycastParams.new()), nil)
+
+	u.CollisionFidelity = Enum.CollisionFidelity.PreciseConvexDecomposition
+	assertEqual(workspace:Raycast(notchOrigin, notchDirection, RaycastParams.new()), nil)
+
+	-- Solid rays hit at every fidelity with face normal and position.
+	for _, fidelity in ipairs({ "Box", "Hull", "Default", "PreciseConvexDecomposition" }) do
+		u.CollisionFidelity = fidelity
+		local hit =
+			workspace:Raycast(Vector3.new(1, 100, -10), Vector3.new(0, 0, 20), RaycastParams.new())
+		assert(hit ~= nil, `solid ray must hit at {fidelity}`)
+		assertEqual(hit.Instance, u)
+		assertClose(hit.Position.X, 1, 1e-6, "solid hit x")
+		assertClose(hit.Position.Y, 100, 1e-6, "solid hit y")
+		assertClose(hit.Position.Z, -2, 1e-6, "solid hit z")
+		assertEqual(hit.Normal, Vector3.new(0, 0, -1))
+	end
 end
 
 function m.geometryServiceUnionReturnsArray()

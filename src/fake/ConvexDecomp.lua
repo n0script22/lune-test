@@ -531,6 +531,32 @@ function ConvexDecomp.pointInConvexes(point, worldConvexes): boolean
 	return false
 end
 
+-- Strict variant: boundary points do NOT count as inside. Mirrors the box
+-- slab test (strict inequalities): rays starting strictly inside a part pass
+-- through it, while on-surface origins still hit.
+function ConvexDecomp.pointStrictlyInConvexes(point, worldConvexes): boolean
+	for _, c in ipairs(worldConvexes) do
+		local inside = true
+
+		for _, f in ipairs(c.faces) do
+			local a = c.verts[f[1]]
+			local n = (c.verts[f[2]] - a):Cross(c.verts[f[3]] - a)
+			local len = n.Magnitude
+
+			if len > 1e-12 and n:Dot(point - a) >= 0 then
+				inside = false
+				break
+			end
+		end
+
+		if inside then
+			return true
+		end
+	end
+
+	return false
+end
+
 -- Closest exterior hit across world convexes. The origin must be outside all
 -- of them (callers enforce the union-level inside rule first).
 function ConvexDecomp.rayConvexes(origin, direction, worldConvexes)

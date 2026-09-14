@@ -1,6 +1,8 @@
 local PartAccess = require("./PartAccess")
 local QueryFilter = require("./QueryFilter")
 local ShapeIntersect = require("./ShapeIntersect")
+local ConvexDecomp = require("./ConvexDecomp")
+local CsgOperations = require("./CsgOperations")
 local Vector3 = require("./Vector3")
 
 local RayQuery = {}
@@ -39,12 +41,66 @@ function RayQuery.rayIntersectOBB(origin, direction, partCFrame, boxSize)
 	}
 end
 
+-- Unions and meshes cast against their collision decomposition: Box uses
+-- the bounding OBB (identical to the plain-part path), Hull a single hull,
+-- Default/PreciseConvexDecomposition the full convex list. Like the box
+-- path, rays starting strictly inside pass through and exact-touch (t = 1)
+-- misses.
+function RayQuery.rayIntersectUnionMesh(origin, direction, part, size, partCFrame, maxDistance)
+	local world = CsgOperations.worldConvexesOfPart(part)
+
+	if world == nil or #world == 0 then
+		if partCFrame ~= nil then
+			return RayQuery.rayIntersectOBB(origin, direction, partCFrame, size)
+		end
+
+		return RayQuery.rayIntersectAABB(origin, direction, getPartPosition(part), size)
+	end
+
+	local fidelity = PartAccess.getCollisionFidelity(part)
+
+	if fidelity == "Box" then
+		if partCFrame ~= nil then
+			return RayQuery.rayIntersectOBB(origin, direction, partCFrame, size)
+		end
+
+		return RayQuery.rayIntersectAABB(origin, direction, getPartPosition(part), size)
+	end
+
+	local list = world
+
+	if fidelity == "Hull" then
+		list = { ConvexDecomp.convexHullOfVerts(ConvexDecomp.allVerts(world)) }
+	end
+
+	if ConvexDecomp.pointStrictlyInConvexes(origin, list) then
+		return nil
+	end
+
+	local hit = ConvexDecomp.rayConvexes(origin, direction, list)
+
+	if hit == nil or hit.t >= 1 then
+		return nil
+	end
+
+	return {
+		t = hit.t,
+		distance = hit.t * maxDistance,
+		position = hit.position,
+		normal = hit.normal,
+	}
+end
+
 function RayQuery.rayIntersectPart(origin, direction, part, size, partCFrame)
 	local shape = getPartShape(part)
 	local maxDistance = math.sqrt(direction.X * direction.X + direction.Y * direction.Y + direction.Z * direction.Z)
 
 	if maxDistance <= EPSILON then
 		return nil
+	end
+
+	if part.ClassName == "UnionOperation" or part.ClassName == "MeshPart" then
+		return RayQuery.rayIntersectUnionMesh(origin, direction, part, size, partCFrame, maxDistance)
 	end
 
 	if shape == "Ball" then
