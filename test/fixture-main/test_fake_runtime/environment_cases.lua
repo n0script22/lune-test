@@ -283,14 +283,17 @@ function m.servicesAreNotCreatableThroughInstanceNew()
 
 	for _, className in ipairs({
 		"CollectionService",
+		"GeometryService",
 		"MemoryStoreService",
 		"RunService",
 		"DataModel",
+		"PartOperation",
 		"ReplicatedStorage",
 		"ServerScriptService",
 		"StarterPlayer",
 		"StarterPlayerScripts",
 		"PlayerScripts",
+		"Terrain",
 	}) do
 		assertErrorContainsOneOf(function()
 			env.Instance.new(className)

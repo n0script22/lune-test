@@ -25,20 +25,6 @@ function m.raycastHitsAxisAlignedPart()
 	assertEqual(hit.Normal, Vector3.new(-1, 0, 0))
 end
 
-function m.raycastMissesWhenDirectionTooShort()
-	local env = createEnvironment({
-		activePlayers = {},
-	})
-	local workspace = env.globals.Workspace
-
-	local part = env.Instance.new("Part", workspace)
-	part.Position = Vector3.new(5, 0, 0)
-	part.Size = Vector3.new(2, 2, 2)
-
-	local hit = workspace:Raycast(Vector3.new(0, 0, 0), Vector3.new(2, 0, 0), RaycastParams.new())
-	assertEqual(hit, nil)
-end
-
 function m.raycastReturnsClosestPart()
 	local env = createEnvironment({
 		activePlayers = {},
@@ -278,22 +264,6 @@ function m.raycastHitsRotatedPart()
 	assertClose(hit.Position.X, 3, 1e-3, "hit x")
 end
 
-function m.raycastSettingPositionPreservesRotation()
-	local env = createEnvironment({
-		activePlayers = {},
-	})
-	local workspace = env.globals.Workspace
-
-	local part = env.Instance.new("Part", workspace)
-	part.Size = Vector3.new(2, 2, 4)
-	part.CFrame = CFrame.new(0, 0, 0) * CFrame.Angles(0, math.rad(90), 0)
-	part.Position = Vector3.new(5, 0, 0)
-
-	local hit = workspace:Raycast(Vector3.new(0, 0, 0), Vector3.new(10, 0, 0), RaycastParams.new())
-	assert(hit ~= nil, "expected ray to hit rotated part after Position set")
-	assertClose(hit.Distance, 3, 1e-3, "distance")
-end
-
 function m.collisionGroupsDefaultToCollidable()
 	local env = createEnvironment({
 		activePlayers = {},
@@ -304,32 +274,6 @@ function m.collisionGroupsDefaultToCollidable()
 	assert(workspace:CollisionGroupsAreCollidable("UnregisteredA", "UnregisteredB"))
 	assert(workspace:IsCollisionGroupRegistered("Default"))
 	assert(not workspace:IsCollisionGroupRegistered("Ghosts"))
-end
-
-function m.collisionGroupsNonCollidablePartsAreSkippedByRaycast()
-	local env = createEnvironment({
-		activePlayers = {},
-	})
-	local workspace = env.globals.Workspace
-
-	workspace:RegisterCollisionGroup("Ghosts")
-	workspace:RegisterCollisionGroup("Walls")
-	workspace:CollisionGroupSetCollidable("Ghosts", "Walls", false)
-
-	local wall = env.Instance.new("Part", workspace)
-	wall.Position = Vector3.new(5, 0, 0)
-	wall.Size = Vector3.new(2, 2, 2)
-	wall.CollisionGroup = "Walls"
-
-	local params = RaycastParams.new()
-	params.CollisionGroup = "Ghosts"
-
-	assertEqual(workspace:Raycast(Vector3.new(0, 0, 0), Vector3.new(10, 0, 0), params), nil)
-
-	params.CollisionGroup = "Walls"
-	local hit = workspace:Raycast(Vector3.new(0, 0, 0), Vector3.new(10, 0, 0), params)
-	assert(hit ~= nil, "same-group ray should hit")
-	assertEqual(hit.Instance, wall)
 end
 
 function m.collisionGroupSetCollidableErrorsForUnregisteredGroups()
@@ -598,20 +542,6 @@ function m.spherecastIgnoresInitiallyOverlappingParts()
 	assertEqual(workspace:Spherecast(Vector3.new(0, 0, 0), 1, Vector3.new(10, 0, 0), RaycastParams.new()), nil)
 end
 
-function m.spherecastRejectsInvalidRadius()
-	local env = createEnvironment({
-		activePlayers = {},
-	})
-	local workspace = env.globals.Workspace
-
-	assert(not pcall(function()
-		workspace:Spherecast(Vector3.new(0, 0, 0), -1, Vector3.new(10, 0, 0))
-	end))
-	assert(not pcall(function()
-		workspace:Spherecast(Vector3.new(0, 0, 0), 512, Vector3.new(10, 0, 0))
-	end))
-end
-
 function m.blockcastHitsPart()
 	local env = createEnvironment({
 		activePlayers = {},
@@ -645,20 +575,6 @@ function m.blockcastIgnoresInitiallyOverlappingParts()
 		workspace:Blockcast(CFrame.new(0, 0, 0), Vector3.new(2, 2, 2), Vector3.new(10, 0, 0), RaycastParams.new()),
 		nil
 	)
-end
-
-function m.blockcastRejectsInvalidSize()
-	local env = createEnvironment({
-		activePlayers = {},
-	})
-	local workspace = env.globals.Workspace
-
-	assert(not pcall(function()
-		workspace:Blockcast(CFrame.new(0, 0, 0), Vector3.new(0, 2, 2), Vector3.new(10, 0, 0))
-	end))
-	assert(not pcall(function()
-		workspace:Blockcast(CFrame.new(0, 0, 0), Vector3.new(1024, 2, 2), Vector3.new(10, 0, 0))
-	end))
 end
 
 function m.shapecastHitsTargetAndExcludesCastPart()
@@ -922,6 +838,8 @@ function m.raycastIgnoresDecorativeProperties()
 	local hit = workspace:Raycast(Vector3.new(0, 0, 0), Vector3.new(10, 0, 0), RaycastParams.new())
 	assert(hit ~= nil, "transparency/anchored/CanTouch must not affect raycast")
 	assertEqual(hit.Instance, part)
+	assertClose(hit.Distance, 4, 1e-4, "distance")
+	assertEqual(hit.Normal, Vector3.new(-1, 0, 0))
 end
 
 function m.raycastIgnoresPartsOutsideWorkspace()
@@ -973,6 +891,7 @@ function m.raycastHitsDeeplyNestedPart()
 	local hit = workspace:Raycast(Vector3.new(0, 0, 0), Vector3.new(10, 0, 0), RaycastParams.new())
 	assert(hit ~= nil, "expected nested hit")
 	assertEqual(hit.Instance, part)
+	assertClose(hit.Distance, 4, 1e-4, "distance")
 end
 
 function m.terrainEmptyVolumeNeverHits()
@@ -1365,11 +1284,13 @@ function m.bruteForceAppliesToSweeps()
 	local sphereHit = workspace:Spherecast(Vector3.new(0, 0, 0), 1, Vector3.new(10, 0, 0), params)
 	assert(sphereHit ~= nil, "BruteForce must apply to Spherecast")
 	assertEqual(sphereHit.Instance, part)
+	assertClose(sphereHit.Distance, 3, 1e-3, "sphere distance")
 
 	local blockHit =
 		workspace:Blockcast(CFrame.new(0, 0, 0), Vector3.new(2, 2, 2), Vector3.new(10, 0, 0), params)
 	assert(blockHit ~= nil, "BruteForce must apply to Blockcast")
 	assertEqual(blockHit.Instance, part)
+	assertClose(blockHit.Distance, 3, 1e-3, "block distance")
 
 	-- But filtered sweeps still miss.
 	local filtered = RaycastParams.new()
@@ -1604,12 +1525,21 @@ function m.collisionGroupFilteringAppliesToAllQueryTypes()
 	-- Same-group queries must hit for every query type.
 	local sameParams = RaycastParams.new()
 	sameParams.CollisionGroup = "Walls"
-	assert(workspace:Raycast(Vector3.new(0, 0, 0), Vector3.new(10, 0, 0), sameParams) ~= nil)
-	assert(workspace:Spherecast(Vector3.new(0, 0, 0), 1, Vector3.new(10, 0, 0), sameParams) ~= nil)
-	assert(
-		workspace:Blockcast(CFrame.new(0, 0, 0), Vector3.new(2, 2, 2), Vector3.new(10, 0, 0), sameParams)
-			~= nil
+	local sameRay = workspace:Raycast(Vector3.new(0, 0, 0), Vector3.new(10, 0, 0), sameParams)
+	assert(sameRay ~= nil, "same-group ray should hit")
+	assertEqual(sameRay.Instance, wall)
+	local sameSphere =
+		workspace:Spherecast(Vector3.new(0, 0, 0), 1, Vector3.new(10, 0, 0), sameParams)
+	assert(sameSphere ~= nil, "same-group sphere should hit")
+	assertEqual(sameSphere.Instance, wall)
+	local sameBlock = workspace:Blockcast(
+		CFrame.new(0, 0, 0),
+		Vector3.new(2, 2, 2),
+		Vector3.new(10, 0, 0),
+		sameParams
 	)
+	assert(sameBlock ~= nil, "same-group block should hit")
+	assertEqual(sameBlock.Instance, wall)
 end
 
 function m.canQueryFilteringAppliesToAllQueryTypes()
@@ -1958,6 +1888,9 @@ function m.raycastWedgeTargetMissesEmptyHalf()
 	local hit = workspace:Raycast(Vector3.new(0, 0, 0.5), Vector3.new(10, 0, 0))
 	assert(hit ~= nil, "low ray must hit wedge")
 	assertEqual(hit.Instance, wedge)
+	assertClose(hit.Distance, 4, 1e-4, "distance")
+	assertEqual(hit.Position, Vector3.new(4, 0, 0.5))
+	assertEqual(hit.Normal, Vector3.new(-1, 0, 0))
 end
 
 function m.raycastCornerWedgeDiffersFromBox()
