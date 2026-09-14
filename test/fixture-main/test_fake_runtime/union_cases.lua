@@ -349,4 +349,52 @@ function m.shapecastWedgeCasterVsUnionTarget()
 	assertEqual(hit.Instance, u)
 end
 
+function m.shapecastUnionCasterNotchPassesThrough()
+	local env = createEnvironment({
+		activePlayers = {},
+	})
+	local workspace = env.globals.Workspace
+
+	local a = env.Instance.new("Part", workspace)
+	a.Size = Vector3.new(4, 4, 4)
+	a.CFrame = CFrame.new(0, 800, 0)
+
+	local b = env.Instance.new("Part", workspace)
+	b.Size = Vector3.new(4, 4, 4)
+	b.CFrame = CFrame.new(1, 802, 0)
+
+	local cast = a:UnionAsync({ b }, Enum.CollisionFidelity.PreciseConvexDecomposition)
+	assert(cast ~= nil, "expected union caster")
+	cast.Parent = workspace
+	a:Destroy()
+	b:Destroy()
+
+	-- Post threading the caster notch: the exact caster passes, the box
+	-- caster hits early.
+	local post = env.Instance.new("Part", workspace)
+	post.Size = Vector3.new(0.5, 0.5, 4)
+	post.CFrame = CFrame.new(-1.5, 803, 5)
+
+	cast.CollisionFidelity = Enum.CollisionFidelity.PreciseConvexDecomposition
+	assertEqual(workspace:Shapecast(cast, Vector3.new(0, 0, 20), RaycastParams.new()), nil)
+
+	cast.CollisionFidelity = Enum.CollisionFidelity.Box
+	local boxHit = workspace:Shapecast(cast, Vector3.new(0, 0, 20), RaycastParams.new())
+	assert(boxHit ~= nil, "box caster must hit the post")
+	assertEqual(boxHit.Instance, post)
+
+	-- A solid wall still stops the exact caster.
+	local wall = env.Instance.new("Part", workspace)
+	wall.Size = Vector3.new(4, 4, 4)
+	wall.CFrame = CFrame.new(1, 800, 15)
+	post:Destroy()
+
+	cast.CollisionFidelity = Enum.CollisionFidelity.PreciseConvexDecomposition
+	local wallHit = workspace:Shapecast(cast, Vector3.new(0, 0, 20), RaycastParams.new())
+	assert(wallHit ~= nil, "exact caster must hit a solid wall")
+	assertEqual(wallHit.Instance, wall)
+	assertClose(wallHit.Distance, 11, 1e-6, "wall distance")
+	assertEqual(wallHit.Normal, Vector3.new(0, 0, -1))
+end
+
 return m

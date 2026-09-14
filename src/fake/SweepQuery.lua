@@ -50,6 +50,88 @@ local function sweepDistance(direction): number
 	return math.sqrt(direction.X * direction.X + direction.Y * direction.Y + direction.Z * direction.Z)
 end
 
+-- Single finished world convex for a non-Ball plain-Part target. Callers
+-- dispatch Ball (exact sphere math) and union targets (decomposition) first.
+local function singleTargetConvex(targetPart)
+	local targetSize = getPartSize(targetPart)
+	local targetShape = getPartShape(targetPart)
+	local partCFrame = getPartCFrame(targetPart)
+	local partCenter = getPartPosition(targetPart)
+	local partCols = {
+		Vector3.new(1, 0, 0),
+		Vector3.new(0, 1, 0),
+		Vector3.new(0, 0, 1),
+	}
+
+	if partCFrame ~= nil then
+		partCenter = partCFrame.Position
+		partCols = SweepFrame.rotationColumns(partCFrame._Rotation)
+	end
+
+	if targetShape == "Cylinder" then
+		local radius = math.min(targetSize.Y, targetSize.Z) / 2
+		local halfLength = targetSize.X / 2
+
+		if radius <= 0 or halfLength <= 0 then
+			return nil
+		end
+
+		return SweepConvex.prismConvex(partCenter, partCols, radius, halfLength)
+	elseif targetShape == "Wedge" then
+		return SweepConvex.wedgeConvex(
+			partCenter,
+			partCols,
+			targetSize.X / 2,
+			targetSize.Y / 2,
+			targetSize.Z / 2
+		)
+	elseif targetShape == "CornerWedge" then
+		return SweepConvex.cornerConvex(
+			partCenter,
+			partCols,
+			targetSize.X / 2,
+			targetSize.Y / 2,
+			targetSize.Z / 2
+		)
+	end
+
+	local partHalf = Vector3.new(targetSize.X / 2, targetSize.Y / 2, targetSize.Z / 2)
+
+	return SweepConvex.boxConvex(partCenter, partCols, partHalf)
+end
+
+local function casterOverlapsTarget(casterList, targetList): boolean
+	for _, caster in ipairs(casterList) do
+		for _, target in ipairs(targetList) do
+			if ConvexDecomp.convexesOverlap(caster, target) then
+				return true
+			end
+		end
+	end
+
+	return false
+end
+
+local function sweepConvexPairs(casterList, targetList, direction)
+	local bestT = nil
+	local bestNormal = nil
+	local bestTarget = nil
+
+	for _, caster in ipairs(casterList) do
+		for _, target in ipairs(targetList) do
+			local t, normal = SweepConvex.sweepConvexVsConvex(caster, direction, target)
+
+			if t ~= nil and (bestT == nil or t < bestT) then
+				bestT = t
+				bestNormal = normal
+				bestTarget = target
+			end
+		end
+	end
+
+	return bestT, bestNormal, bestTarget
+end
+
 local function assertSweepDirection(direction, methodName: string, maxDistance: number): number
 	assert(isVector3Like(direction), `{methodName} direction must be a Vector3`)
 
@@ -426,32 +508,10 @@ local function sweepWedgeVsPart(
 		}
 	end
 
-	local targetConvex
-	if targetShape == "Cylinder" then
-		local r = math.min(targetSize.Y, targetSize.Z) / 2
-		local h = targetSize.X / 2
-		if r <= 0 or h <= 0 then
-			return nil
-		end
-		targetConvex = SweepConvex.prismConvex(partCenter, partCols, r, h)
-	elseif targetShape == "Wedge" then
-		targetConvex = SweepConvex.wedgeConvex(
-			partCenter,
-			partCols,
-			targetSize.X / 2,
-			targetSize.Y / 2,
-			targetSize.Z / 2
-		)
-	elseif targetShape == "CornerWedge" then
-		targetConvex = SweepConvex.cornerConvex(
-			partCenter,
-			partCols,
-			targetSize.X / 2,
-			targetSize.Y / 2,
-			targetSize.Z / 2
-		)
-	else
-		targetConvex = SweepConvex.boxConvex(partCenter, partCols, partHalf)
+	local targetConvex = singleTargetConvex(targetPart)
+
+	if targetConvex == nil then
+		return nil
 	end
 
 	local t, normal = SweepConvex.sweepConvexVsConvex(casterConvex, direction, targetConvex)
@@ -478,6 +538,82 @@ local function sweepWedgeVsPart(
 	}
 end
 
+-- Union/mesh caster (world convex list, rigid) vs one target part. Ball
+-- targets use exact sphere math; everything else sweeps convex-vs-convex
+-- per pair with a target-side support contact.
+local function sweepCasterConvexListVsPart(casterList, direction, targetPart)
+	local maxDistance = sweepDistance(direction)
+	local targetUnion = unionTargetList(targetPart)
+
+	if targetUnion ~= nil then
+		if casterOverlapsTarget(casterList, targetUnion) then
+			return nil
+		end
+
+		local t, normal, target = sweepConvexPairs(casterList, targetUnion, direction)
+
+		if t == nil then
+			return nil
+		end
+
+		return {
+			t = t,
+			distance = t * maxDistance,
+			position = ConvexDecomp.supportPoint(target, normal),
+			normal = normal,
+		}
+	end
+
+	if getPartShape(targetPart) == "Ball" then
+		local size = getPartSize(targetPart)
+		local partCFrame = getPartCFrame(targetPart)
+		local center = if partCFrame ~= nil then partCFrame.Position else getPartPosition(targetPart)
+		local radius = math.min(size.X, size.Y, size.Z) / 2
+
+		if radius <= 0 then
+			return nil
+		end
+
+		local sweep = SweepSphere.sweepConvexListVsSphere(casterList, direction, center, radius)
+
+		if sweep == nil then
+			return nil
+		end
+
+		return {
+			t = sweep.t,
+			distance = sweep.t * maxDistance,
+			position = sweep.contact,
+			normal = sweep.normal,
+		}
+	end
+
+	local targetConvex = singleTargetConvex(targetPart)
+
+	if targetConvex == nil then
+		return nil
+	end
+
+	local single = { targetConvex }
+
+	if casterOverlapsTarget(casterList, single) then
+		return nil
+	end
+
+	local t, normal, target = sweepConvexPairs(casterList, single, direction)
+
+	if t == nil then
+		return nil
+	end
+
+	return {
+		t = t,
+		distance = t * maxDistance,
+		position = ConvexDecomp.supportPoint(target, normal),
+		normal = normal,
+	}
+end
+
 local function sweepCandidates(workspace, params, excludePart, testPart)
 	local closestHit = nil
 	local closestPart = nil
@@ -498,6 +634,24 @@ local function sweepCandidates(workspace, params, excludePart, testPart)
 	end
 
 	return QueryFilter.buildResult(closestPart, closestHit.position, closestHit.distance, closestHit.normal)
+end
+
+local function shapecastConvexList(workspace, part, direction, params, fidelity)
+	local world = CsgOperations.worldConvexesOfPart(part)
+
+	if world == nil or #world == 0 then
+		return nil
+	end
+
+	local casterList = world
+
+	if fidelity == "Hull" then
+		casterList = { ConvexDecomp.convexHullOfVerts(ConvexDecomp.allVerts(world)) }
+	end
+
+	return sweepCandidates(workspace, params, part, function(candidate)
+		return sweepCasterConvexListVsPart(casterList, direction, candidate)
+	end)
 end
 
 local function sweepBoxCast(workspace, castCenter0, castCols, castHalf, direction, params, excludePart)
@@ -596,6 +750,16 @@ function SweepQuery.shapecast(workspace, part, direction, params)
 
 	local size = getPartSize(part)
 	assertCastSize(size, "Workspace:Shapecast", 512)
+
+	-- Unions and meshes cast their decomposition at Hull/Default/Precise
+	-- fidelity; Box falls through to the box path below.
+	if part.ClassName == "UnionOperation" or part.ClassName == "MeshPart" then
+		local fidelity = PartAccess.getCollisionFidelity(part)
+
+		if fidelity == "Hull" or fidelity == "Default" or fidelity == "PreciseConvexDecomposition" then
+			return shapecastConvexList(workspace, part, direction, params, fidelity)
+		end
+	end
 
 	-- Engine (verified against Studio): Wedge/CornerWedge casters are exact,
 	-- Cylinder casters sweep as boxes (like Block).

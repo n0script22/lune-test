@@ -522,4 +522,43 @@ function SweepSphere.sweepWedgeVsSphere(
 	return { t = sweep.t, normal = off / len, contact = contactWorld }
 end
 
+-- Union/mesh caster (world convex list, rigid) vs a ball target (world
+-- sphere). Exact sphere math per convex, like sweepWedgeVsSphere but without
+-- the role-swap: the sphere center sweeps directly against each static
+-- convex. Returns t, sphere-outward normal, caster-side contact.
+function SweepSphere.sweepConvexListVsSphere(worldConvexes, direction, sphereCenter, sphereRadius)
+	if ConvexDecomp.pointStrictlyInConvexes(sphereCenter, worldConvexes) then
+		return nil
+	end
+
+	local best = nil
+
+	for _, convex in ipairs(worldConvexes) do
+		local single = { convex }
+		local hit = sweepSphereVsConvex(sphereCenter, direction, sphereRadius, function(p)
+			return ConvexDecomp.pointStrictlyInConvexes(p, single)
+		end, function(p)
+			return ConvexDecomp.distPointConvex(p, convex)
+		end)
+
+		if hit ~= nil and (best == nil or hit.t < best.t) then
+			best = hit
+		end
+	end
+
+	if best == nil then
+		return nil
+	end
+
+	local centerAtTOI = sphereCenter + direction * best.t
+	local off = best.contact - centerAtTOI
+	local len = math.sqrt(off.X * off.X + off.Y * off.Y + off.Z * off.Z)
+
+	if len < 1e-9 then
+		return nil
+	end
+
+	return { t = best.t, normal = off / len, contact = best.contact }
+end
+
 return SweepSphere
