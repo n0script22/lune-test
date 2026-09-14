@@ -363,4 +363,186 @@ function m.datatypesDocsRandomExample()
 	assert(random:NextInteger(1, 10) == clone:NextInteger(1, 10))
 end
 
+function m.servicesDocsWorkspaceRaycastExample()
+	local wall = Instance.new("Part", workspace)
+	wall.Name = "Wall"
+	wall.Position = Vector3.new(5, 0, 0)
+	wall.Size = Vector3.new(2, 2, 2)
+
+	local hit = workspace:Raycast(Vector3.new(0, 0, 0), Vector3.new(10, 0, 0))
+
+	assert(hit.Instance == wall)
+	assert(hit.Position == Vector3.new(4, 0, 0))
+	assert(hit.Distance == 4)
+	assert(hit.Normal == Vector3.new(-1, 0, 0))
+	assert(hit.Material == Enum.Material.Plastic)
+end
+
+function m.servicesDocsWorkspaceFilterExample()
+	local character = Instance.new("Model", workspace)
+	character.Name = "Character"
+
+	local head = Instance.new("Part", character)
+	head.Position = Vector3.new(5, 0, 0)
+	head.Size = Vector3.new(2, 2, 2)
+
+	local wall = Instance.new("Part", workspace)
+	wall.Position = Vector3.new(9, 0, 0)
+	wall.Size = Vector3.new(2, 2, 2)
+
+	local origin = Vector3.new(0, 0, 0)
+	local direction = Vector3.new(20, 0, 0)
+
+	local params = RaycastParams.new()
+	params.ExcludeInstances = { character }
+
+	local hit = workspace:Raycast(origin, direction, params)
+	assert(hit.Instance == wall)
+end
+
+function m.servicesDocsCollisionGroupExample()
+	workspace:RegisterCollisionGroup("Ghosts")
+	workspace:RegisterCollisionGroup("Walls")
+	workspace:CollisionGroupSetCollidable("Ghosts", "Walls", false)
+
+	local wall = Instance.new("Part", workspace)
+	wall.Position = Vector3.new(5, 0, 0)
+	wall.Size = Vector3.new(2, 2, 2)
+	wall.CollisionGroup = "Walls"
+
+	local origin = Vector3.new(0, 0, 0)
+	local direction = Vector3.new(10, 0, 0)
+
+	local params = RaycastParams.new()
+	params.CollisionGroup = "Ghosts"
+
+	assert(workspace:Raycast(origin, direction, params) == nil)
+end
+
+function m.servicesDocsTerrainExample()
+	workspace.Terrain.Position = Vector3.new(0, -6, 0)
+	workspace.Terrain.Size = Vector3.new(100, 2, 100)
+
+	local hit = workspace:Raycast(Vector3.new(0, 10, 0), Vector3.new(0, -30, 0))
+	assert(hit.Instance == workspace.Terrain)
+end
+
+function m.servicesDocsShapecastExample()	local wall = Instance.new("Part", workspace)
+	wall.Position = Vector3.new(5, 0, 0)
+	wall.Size = Vector3.new(2, 2, 2)
+
+	local handle = Instance.new("Part", workspace)
+	handle.Position = Vector3.new(0, 0, 0)
+	handle.Size = Vector3.new(2, 2, 2)
+
+	local hit = workspace:Spherecast(Vector3.new(0, 0, 0), 1, Vector3.new(10, 0, 0))
+	assert(hit.Instance == wall)
+
+	local blockHit = workspace:Blockcast(CFrame.new(0, 0, 0), Vector3.new(2, 2, 2), Vector3.new(10, 0, 0))
+	assert(blockHit.Instance == wall)
+
+	local shapeHit = workspace:Shapecast(handle, Vector3.new(10, 0, 0))
+	assert(shapeHit.Instance == wall)
+end
+
+function m.datatypesDocsRaycastParamsFilterExample()
+	local character = Instance.new("Model", workspace)
+	character.Name = "Character"
+
+	local head = Instance.new("Part", character)
+	head.Position = Vector3.new(5, 0, 0)
+	head.Size = Vector3.new(2, 2, 2)
+
+	local arena = Instance.new("Folder", workspace)
+	arena.Name = "Arena"
+
+	local wall = Instance.new("Part", arena)
+	wall.Position = Vector3.new(9, 0, 0)
+	wall.Size = Vector3.new(2, 2, 2)
+
+	local origin = Vector3.new(0, 0, 0)
+	local direction = Vector3.new(20, 0, 0)
+
+	local params = RaycastParams.new()
+	params.ExcludeInstances = { character }
+	params.IncludeInstances = { workspace.Arena }
+
+	local hit = workspace:Raycast(origin, direction, params)
+	assert(hit.Instance == wall)
+end
+
+function m.datatypesDocsRaycastResultExample()
+	local wall = Instance.new("Part", workspace)
+	wall.Position = Vector3.new(5, 0, 0)
+	wall.Size = Vector3.new(2, 2, 2)
+
+	local origin = Vector3.new(0, 0, 0)
+	local direction = Vector3.new(10, 0, 0)
+
+	local hit = workspace:Raycast(origin, direction)
+
+	if hit ~= nil then
+		assert(hit.Instance:IsA("BasePart"))
+		assert(hit.Distance >= 0)
+	end
+
+	assert(hit.Instance == wall)
+end
+
+function m.servicesDocsShapeExample()
+	local ball = Instance.new("Part", workspace)
+	ball.Position = Vector3.new(5, 0, 0)
+	ball.Size = Vector3.new(2, 2, 2)
+	ball.Shape = Enum.PartType.Ball
+
+	assert(workspace:Raycast(Vector3.new(0, 0.9, 0.9), Vector3.new(10, 0, 0)) == nil)
+	assert(workspace:Raycast(Vector3.new(0, 0, 0), Vector3.new(10, 0, 0)).Instance == ball)
+end
+
+function m.servicesDocsUnionFidelityExample()
+	local slab = Instance.new("Part", workspace)
+	slab.Size = Vector3.new(4, 4, 4)
+	slab.CFrame = CFrame.new(0, 2, 0)
+
+	local cap = Instance.new("Part", workspace)
+	cap.Size = Vector3.new(4, 4, 4)
+	cap.CFrame = CFrame.new(2, 6, 0)
+
+	local union = slab:UnionAsync({ cap }, Enum.CollisionFidelity.PreciseConvexDecomposition)
+	union.Parent = workspace
+	slab:Destroy()
+	cap:Destroy()
+
+	union.CollisionFidelity = Enum.CollisionFidelity.Box
+	assert(workspace:Raycast(Vector3.new(-1, 6, -10), Vector3.new(0, 0, 20)) ~= nil)
+
+	union.CollisionFidelity = Enum.CollisionFidelity.PreciseConvexDecomposition
+	assert(workspace:Raycast(Vector3.new(-1, 6, -10), Vector3.new(0, 0, 20)) == nil)
+end
+
+function m.servicesDocsGeometryServiceExample()
+	local geometry = game:GetService("GeometryService")
+
+	local first = Instance.new("Part", workspace)
+	first.Size = Vector3.new(2, 2, 2)
+	first.CFrame = CFrame.new(0, 20, 0)
+
+	local second = Instance.new("Part", workspace)
+	second.Size = Vector3.new(2, 2, 2)
+	second.CFrame = CFrame.new(50, 20, 0)
+
+	local results = geometry:UnionAsync(first, { second })
+	assert(#results == 2)
+	assert(results[1].ClassName == "UnionOperation")
+end
+
+function m.datatypesDocsCollisionFidelityExample()
+	local union = Instance.new("UnionOperation", workspace)
+	assert(union:IsA("BasePart"))
+	assert(union.CollisionFidelity == Enum.CollisionFidelity.Box)
+
+	union.CollisionFidelity = Enum.CollisionFidelity.PreciseConvexDecomposition
+	assert(union.CollisionFidelity == Enum.CollisionFidelity.PreciseConvexDecomposition)
+end
+
 return m

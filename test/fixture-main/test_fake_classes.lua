@@ -58,6 +58,85 @@ function m.vector3HelpersAndConstants()
 	assertVector3Equal(Vector3.new(0, 0, 0):Lerp(Vector3.new(8, 4, 2), 0.5), 4, 2, 1)
 end
 
+function m.vector3MagnitudeAndUnit()
+	assertEqual(Vector3.new(3, 4, 0).Magnitude, 5)
+	assertEqual(Vector3.zero.Magnitude, 0)
+
+	local unit = Vector3.new(3, 4, 0).Unit
+	assertClose(unit.Magnitude, 1, 1e-6, "unit magnitude")
+	assertVector3Equal(Vector3.new(0, 5, 0).Unit, 0, 1, 0)
+end
+
+function m.vector3ZeroUnitIsNaN()
+	local unit = Vector3.zero.Unit
+	assert(unit.X ~= unit.X and unit.Y ~= unit.Y and unit.Z ~= unit.Z, "zero Unit must be NaN components")
+	assert(unit.Magnitude ~= unit.Magnitude, "zero Unit magnitude must be NaN")
+end
+
+function m.vector3MagnitudeNegativeAndFractional()
+	assertEqual(Vector3.new(-3, -4, 0).Magnitude, 5)
+	assertClose(Vector3.new(1, 1, 1).Magnitude, math.sqrt(3), 1e-9, "diagonal")
+	assertClose(Vector3.new(0.3, 0.4, 0).Magnitude, 0.5, 1e-9, "fractional")
+end
+
+function m.vector3UnitDiagonalAndImmutability()
+	local original = Vector3.new(1, 1, 1)
+	local unit = original.Unit
+
+	assertClose(unit.Magnitude, 1, 1e-9, "unit magnitude")
+	assertClose(unit.X, 1 / math.sqrt(3), 1e-9, "unit x")
+	assertEqual(original, Vector3.new(1, 1, 1))
+
+	local negUnit = Vector3.new(-5, 0, 0).Unit
+	assertVector3Equal(negUnit, -1, 0, 0)
+	assertClose(unit.Unit.Magnitude, 1, 1e-9, "unit of unit")
+end
+
+function m.vector3MagnitudeTracksArithmetic()
+	local moved = Vector3.new(1, 2, 2) + Vector3.new(2, 2, -2)
+	assertEqual(moved.Magnitude, 5)
+
+	local scaled = Vector3.new(1, 0, 0) * 3
+	assertEqual(scaled.Magnitude, 3)
+	assertVector3Equal(scaled.Unit, 1, 0, 0)
+end
+
+function m.raycastParamsDefaults()
+	local params = RaycastParams.new()
+
+	assertEqual(params.FilterType, "Exclude")
+	assertEqual(params.IgnoreWater, false)
+	assertEqual(params.BruteForceAllSlow, false)
+	assertEqual(params.RespectCanCollide, false)
+	assertEqual(params.CollisionGroup, "Default")
+	assertEqual(#params.FilterDescendantsInstances, 0)
+	assertEqual(params.ExcludeInstances, nil)
+	assertEqual(params.IncludeInstances, nil)
+end
+
+function m.raycastParamsAddToFilter()
+	local params = RaycastParams.new()
+	local part = Instance.new("Part")
+
+	params:AddToFilter(part)
+	assertEqual(#params.FilterDescendantsInstances, 1)
+	assertEqual(params.FilterDescendantsInstances[1], part)
+
+	params:AddToFilter({ Instance.new("Part"), Instance.new("Part") })
+	assertEqual(#params.FilterDescendantsInstances, 3)
+end
+
+function m.raycastParamsInstancesAreIndependent()
+	local a = RaycastParams.new()
+	local b = RaycastParams.new()
+
+	a.IgnoreWater = true
+	a.FilterDescendantsInstances = { Instance.new("Part") }
+
+	assertEqual(b.IgnoreWater, false)
+	assertEqual(#b.FilterDescendantsInstances, 0)
+end
+
 function m.udimArithmetic()
 	local a = UDim.new(0.5, 12)
 	local b = UDim.new(0.25, -2)
@@ -118,15 +197,13 @@ end
 
 function m.cframeOrientationAndLookAt()
 	local rotated = CFrame.Angles(0.1, 0.2, 0.3)
-	local x, y, z = rotated:ToOrientation()
 	local ex, ey, ez = rotated:ToEulerAnglesXYZ()
-	local fx, fy, fz = CFrame.fromEulerAnglesXYZ(0.4, 0.5, 0.6):ToOrientation()
 	local ox, oy, oz = CFrame.fromOrientation(0.7, 0.8, 0.9):ToOrientation()
+	local fx, fy, fz = CFrame.fromEulerAnglesXYZ(0.4, 0.5, 0.6):ToEulerAnglesXYZ()
+	local singleAxis = CFrame.Angles(0.25, 0, 0)
+	local sx, sy, sz = singleAxis:ToOrientation()
 	local lookAt = CFrame.lookAt(Vector3.zero, Vector3.new(0, 0, -10))
 
-	assertClose(x, 0.1, 1e-6, "orientation x")
-	assertClose(y, 0.2, 1e-6, "orientation y")
-	assertClose(z, 0.3, 1e-6, "orientation z")
 	assertClose(ex, 0.1, 1e-6, "euler x")
 	assertClose(ey, 0.2, 1e-6, "euler y")
 	assertClose(ez, 0.3, 1e-6, "euler z")
@@ -136,7 +213,18 @@ function m.cframeOrientationAndLookAt()
 	assertClose(ox, 0.7, 1e-6, "fromOrientation x")
 	assertClose(oy, 0.8, 1e-6, "fromOrientation y")
 	assertClose(oz, 0.9, 1e-6, "fromOrientation z")
-	assertVector3Equal(lookAt.LookVector, 0, 0, -10)
+	assertClose(sx, 0.25, 1e-6, "single axis orientation x")
+	assertClose(sy, 0, 1e-6, "single axis orientation y")
+	assertClose(sz, 0, 1e-6, "single axis orientation z")
+	assertVector3Equal(lookAt.LookVector, 0, 0, -1)
+end
+
+function m.cframeLookVectorAndPointTransform()
+	local tilted = CFrame.new(5, 0, 0) * CFrame.Angles(0, math.rad(90), 0)
+	local point = tilted:PointToWorldSpace(Vector3.new(0, 0, -1))
+
+	assert((tilted.LookVector - Vector3.new(-1, 0, 0)).Magnitude < 1e-6)
+	assert((point - Vector3.new(4, 0, 0)).Magnitude < 1e-6)
 end
 
 function m.brickColorConstructorsAndEquality()
@@ -311,6 +399,30 @@ function m.instanceCloneCopiesHierarchyPropertiesAttributesAndTags()
 	assertEqual(value.Value, 7)
 	assertEqual(root:GetAttribute("Label"), "Original")
 	assert(root:FindFirstChild("ClonedHandle") == nil)
+end
+
+function m.basePartDefaults()
+	local part = Instance.new("Part")
+
+	assertEqual(part.Size, Vector3.new(4, 1, 2))
+	assertEqual(part.CanQuery, true)
+	assertEqual(part.CanCollide, true)
+	assertEqual(part.CanTouch, true)
+	assertEqual(part.Material, Enum.Material.Plastic)
+	assertEqual(part.CollisionGroup, "Default")
+end
+
+function m.materialEnumExists()
+	assertEqual(Enum.Material.Plastic, "Plastic")
+	assertEqual(Enum.Material.Wood, "Wood")
+	assertEqual(Enum.Material.Glass, "Glass")
+end
+
+function m.partShapeDefaultsToBlock()
+	local part = Instance.new("Part")
+
+	assertEqual(part.Shape, Enum.PartType.Block)
+	assertEqual(Enum.PartType.Ball, "Ball")
 end
 
 return m

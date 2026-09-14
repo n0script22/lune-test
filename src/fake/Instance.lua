@@ -1,5 +1,6 @@
 local CFrame = require("./CFrame")
 local ClassData = require("./ClassData")
+local CsgService = require("./CsgService")
 local Signal = require("./Signal")
 local Vector3 = require("./Vector3")
 
@@ -154,8 +155,16 @@ local function setBasePartSpatialProperty(self, propertyName: string, value)
 	local properties = rawget(self, "_properties")
 
 	if propertyName == "Position" then
+		local currentCFrame = properties.CFrame
+		local hasRotation = type(currentCFrame) == "table" and currentCFrame._Rotation ~= nil
+
 		properties.Position = value
-		properties.CFrame = CFrame.new(value)
+
+		if hasRotation then
+			properties.CFrame = CFrame.fromMatrix(value, currentCFrame.RightVector, currentCFrame.UpVector)
+		else
+			properties.CFrame = CFrame.new(value)
+		end
 		firePropertyChanged(self, "Position", value)
 		firePropertyChanged(self, "CFrame", properties.CFrame)
 		return true
@@ -387,6 +396,26 @@ function InstanceMethods:IsA(className: string)
 	return ClassData.isA(self.ClassName, className)
 end
 
+function InstanceMethods:IsDescendantOf(ancestor): boolean
+	local cursor = rawget(self, "_parent")
+
+	while cursor ~= nil do
+		if cursor == ancestor then
+			return true
+		end
+
+		cursor = rawget(cursor, "_parent")
+	end
+
+	return false
+end
+
+function InstanceMethods:IsAncestorOf(descendant): boolean
+	return type(descendant) == "table"
+		and descendant._isFakeRobloxInstance == true
+		and descendant:IsDescendantOf(self)
+end
+
 function InstanceMethods:GetPropertyChangedSignal(propertyName: string)
 	local propertySignals = rawget(self, "_propertySignals")
 	local signal = propertySignals[propertyName]
@@ -515,6 +544,24 @@ function InstanceMethods:ClearAllChildren()
 	for _, child in ipairs(children) do
 		child:Destroy()
 	end
+end
+
+function InstanceMethods:UnionAsync(parts, collisionFidelity, renderFidelity)
+	local runtime = rawget(self, "_runtime")
+	assert(runtime ~= nil, "UnionAsync requires a fake environment runtime")
+	return CsgService.unionSingle(runtime, self, parts, collisionFidelity, renderFidelity)
+end
+
+function InstanceMethods:SubtractAsync(parts, collisionFidelity, renderFidelity)
+	local runtime = rawget(self, "_runtime")
+	assert(runtime ~= nil, "SubtractAsync requires a fake environment runtime")
+	return CsgService.subtractSingle(runtime, self, parts, collisionFidelity, renderFidelity)
+end
+
+function InstanceMethods:IntersectAsync(parts, collisionFidelity, renderFidelity)
+	local runtime = rawget(self, "_runtime")
+	assert(runtime ~= nil, "IntersectAsync requires a fake environment runtime")
+	return CsgService.intersectSingle(runtime, self, parts, collisionFidelity, renderFidelity)
 end
 
 function InstanceMetatable.__index(self, key)
@@ -697,6 +744,50 @@ function InstanceMethods:Clone()
 		rawset(clone, "_properties", clonedProperties)
 		rawset(clone, "_propertyPresence", clonedPropertyPresence)
 		rawset(clone, "_attributes", clonedAttributes)
+
+		-- CSG decomposition travels with the part (arrays are copied so the
+		-- clone never aliases the source's convexes; Vector3s are shared
+		-- like every other property value).
+		local sourceConvexes = rawget(source, "_collisionConvexes")
+
+		if sourceConvexes ~= nil then
+			local clonedConvexes = {}
+
+			for _, convex in ipairs(sourceConvexes) do
+				local verts = {}
+				local faces = {}
+				local normals = {}
+				local edges = {}
+
+				for i, v in ipairs(convex.verts) do
+					verts[i] = v
+				end
+				for i, f in ipairs(convex.faces) do
+					faces[i] = { f[1], f[2], f[3] }
+				end
+				for i, n in ipairs(convex.normals or {}) do
+					normals[i] = n
+				end
+				for i, e in ipairs(convex.edges or {}) do
+					edges[i] = e
+				end
+
+				table.insert(clonedConvexes, {
+					verts = verts,
+					faces = faces,
+					normals = normals,
+					edges = edges,
+				})
+			end
+
+			rawset(clone, "_collisionConvexes", clonedConvexes)
+		end
+
+		local sourceBaseSize = rawget(source, "_unionBaseSize")
+
+		if sourceBaseSize ~= nil then
+			rawset(clone, "_unionBaseSize", sourceBaseSize)
+		end
 
 		if sourceTags ~= nil then
 			if runtime ~= nil then

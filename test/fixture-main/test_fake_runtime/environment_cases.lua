@@ -283,14 +283,17 @@ function m.servicesAreNotCreatableThroughInstanceNew()
 
 	for _, className in ipairs({
 		"CollectionService",
+		"GeometryService",
 		"MemoryStoreService",
 		"RunService",
 		"DataModel",
+		"PartOperation",
 		"ReplicatedStorage",
 		"ServerScriptService",
 		"StarterPlayer",
 		"StarterPlayerScripts",
 		"PlayerScripts",
+		"Terrain",
 	}) do
 		assertErrorContainsOneOf(function()
 			env.Instance.new(className)
@@ -424,6 +427,45 @@ function m.getServiceReturnsNilForUnavailableServices()
 	assertEqual(env:getService("RunService"), nil)
 	assertEqual(env.game:GetService("RunService"), nil)
 	assert(env:getService("ReplicatedStorage") ~= nil)
+end
+
+function m.raycastFilterTypeEnumExists()
+	assertEqual(Enum.RaycastFilterType.Exclude, "Exclude")
+	assertEqual(Enum.RaycastFilterType.Include, "Include")
+end
+
+function m.workspaceRaycastDefaultsToMiss()
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.IgnoreWater = true
+
+	local env = createEnvironment({
+		activePlayers = {},
+	})
+
+	local hit = env.globals.Workspace:Raycast(Vector3.new(0, 4, 0), Vector3.new(10, 0, 0), params)
+	assertEqual(hit, nil)
+end
+
+function m.workspaceRaycastCanBeOverriddenPerTest()
+	local env = createEnvironment({
+		activePlayers = {},
+	})
+	local capturedOrigin, capturedParams
+
+	env.globals.Workspace.Raycast = function(_, origin, _direction, params)
+		capturedOrigin = origin
+		capturedParams = params
+
+		local wall = Instance.new("Part")
+		wall.Name = "Wall"
+		return { Instance = wall }
+	end
+
+	local hit = env.globals.Workspace:Raycast(Vector3.new(0, 0, 0), Vector3.new(1, 0, 0), RaycastParams.new())
+	assert(hit ~= nil and hit.Instance:IsA("BasePart"), "override must return a part hit")
+	assertEqual(capturedOrigin, Vector3.new(0, 0, 0))
+	assert(capturedParams ~= nil, "override must receive raycast params")
 end
 
 return m

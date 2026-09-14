@@ -1,4 +1,5 @@
 local TestHelpers = require("@test/test_helpers")
+local assertClose = TestHelpers.assertClose
 local assertEqual = TestHelpers.assertEqual
 local assertSequenceEqual = TestHelpers.assertSequenceEqual
 
@@ -121,6 +122,26 @@ function m.instanceHierarchyAttributesAndSignals()
 	assert(root:FindFirstChild("Inventory") == nil)
 end
 
+function m.instanceIsDescendantAndAncestorChecks()
+	local env = createEnvironment({
+		activePlayers = {},
+	})
+	local root = env.Instance.new("Folder")
+	local child = env.Instance.new("Folder", root)
+	local grandChild = env.Instance.new("Part", child)
+	local outsider = env.Instance.new("Folder")
+
+	assert(grandChild:IsDescendantOf(root))
+	assert(grandChild:IsDescendantOf(child))
+	assert(child:IsDescendantOf(root))
+	assert(not root:IsDescendantOf(root))
+	assert(not root:IsDescendantOf(child))
+	assert(not grandChild:IsDescendantOf(outsider))
+	assert(root:IsAncestorOf(grandChild))
+	assert(child:IsAncestorOf(grandChild))
+	assert(not grandChild:IsAncestorOf(root))
+end
+
 function m.instanceEventSemanticsAndChildClearing()
 	local env = createEnvironment({
 		activePlayers = {},
@@ -241,6 +262,22 @@ function m.waitForChildToplevelMissingServiceChildReturnsNil()
 	local waited = ReplicatedStorage:WaitForChild("Items")
 
 	assertEqual(waited, nil)
+end
+
+function m.positionSettingPreservesRotation()
+	local env = createEnvironment({
+		activePlayers = {},
+	})
+	local workspace = env.globals.Workspace
+
+	local part = env.Instance.new("Part", workspace)
+	part.Size = Vector3.new(2, 2, 4)
+	part.CFrame = CFrame.new(0, 0, 0) * CFrame.Angles(0, math.rad(90), 0)
+	part.Position = Vector3.new(5, 0, 0)
+
+	local hit = workspace:Raycast(Vector3.new(0, 0, 0), Vector3.new(10, 0, 0), RaycastParams.new())
+	assert(hit ~= nil, "expected ray to hit rotated part after Position set")
+	assertClose(hit.Distance, 3, 1e-3, "distance")
 end
 
 return m
