@@ -213,6 +213,29 @@ return {
 
 A workspace must define either `mounts` or `rojoProject`. Workspace `testLocations` are also supported and use that workspace's mounts.
 
+## Environment
+
+`environment` configures the fake environment for suites. It supports the same fields as `createEnvironment`, including `virtualClock.unixBase` for deterministic time and `workspace` for authority properties.
+
+```lua
+return {
+	environment = {
+		virtualClock = {
+			unixBase = 1700000000,
+		},
+		workspace = {
+			AuthorityMode = "Server",
+		},
+	},
+	testLocations = { "./unit/test_*" },
+	mounts = {
+		ReplicatedStorage = "./src/shared",
+	},
+}
+```
+
+Per-suite `environment` and per-workspace `environment` override the top-level value. Every case uses a new sandbox and environment.
+
 ## Child manifests
 
 `childManifests` loads additional manifests and merges their suites into the parent manifest.

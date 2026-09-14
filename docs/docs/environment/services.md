@@ -77,6 +77,56 @@ assert(dt == 0.25)
 
 `IsStudio`, `IsServer`, and `IsClient` read from environment config flags.
 
+`RunService` also exposes `PreSimulation` and `PostSimulation` (physics-step time, which may deviate from wall `dt`).
+
+## Workspace authority
+
+`Workspace` exposes the server-authority stack:
+
+- `AuthorityMode` (`Automatic` default, `Server` for server authority)
+- `UseFixedSimulation` (`Disabled` default, `Enabled` for fixed-step sim)
+- `SignalBehavior` (`Default`, `Immediate`, `Deferred`, `AncestryDeferred`)
+- `NextGenerationReplication` (`Disabled`/`Enabled`)
+- `StreamingEnabled` (default `true`)
+- `DistributedGameTime` (elapsed game time) and `GetServerTimeNow()` (monotonic server approx)
+
+```lua
+local env = createEnvironment({
+	workspace = {
+		AuthorityMode = "Server",
+	},
+})
+
+local workspace = env.game:GetService("Workspace")
+assert(workspace.SignalBehavior == "Deferred")
+assert(workspace.UseFixedSimulation == "Enabled")
+```
+
+Setting `AuthorityMode` to `Server` auto-enables `NextGenerationReplication`, `Deferred` signals, fixed simulation, and streaming, like the engine.
+
+## Server simulation
+
+`RunService:BindToSimulation(fn, freq, prio)` and `BindToAnimation` run at a fixed frequency independent of framerate when `UseFixedSimulation` is enabled (`Hz60`/`Hz30`/`Hz15`/`Hz10`/`Hz5`/`Hz1`, lower `prio` first). `IsResimulating()`, `Misprediction`, and `Rollback` cover resimulation; `env:forceMispredict` drives a deterministic rollback in tests.
+
+```lua
+local env = createEnvironment({
+	workspace = {
+		UseFixedSimulation = "Enabled",
+	},
+})
+local runService = env.game:GetService("RunService")
+
+local count = 0
+runService:BindToSimulation(function(dt)
+	count += 1
+end, "Hz60")
+
+env.scheduler:advance(1)
+assert(count == 60)
+```
+
+Inside sim-bound functions, writes to unsynchronized properties on in-DataModel instances error (store custom state in attributes and apply it in `PostSimulation`/`RenderStepped`); only replicated attributes (first 64, name ≤50, string value ≤50) are tracked for rollback. Instances created inside sim must be parented into the DataModel the same frame (instance stitching).
+
 ## Players
 
 `Players` exposes:

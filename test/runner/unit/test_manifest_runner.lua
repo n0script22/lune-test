@@ -100,4 +100,22 @@ function m.searchRootForPatternPreservesUnixAndWindowsAbsolutePrefixes()
 	assert(manifestRunner.getSearchRootForPattern("./test/runner/unit/**/*.lua"):match("test/runner/unit$") ~= nil)
 end
 
+function m.manifestEnvironmentConfiguresVirtualClock()
+	local manifest = manifestRunner.loadManifest("test/runner/fixtures/manifest_environment/manifest.lua")
+
+	assert(manifest.environment.virtualClock.unixBase == 1700000000)
+	assert(manifest.tests["unit/test_env"].environment.virtualClock.unixBase == 1700000000)
+
+	local results = runner.runSelections({
+		{
+			kind = "suite",
+			manifest = manifest,
+			suiteName = "unit/test_env",
+		},
+	})
+
+	assert(results.success)
+	assert(results.total == 1)
+end
+
 return m

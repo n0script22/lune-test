@@ -363,4 +363,50 @@ function m.datatypesDocsRandomExample()
 	assert(random:NextInteger(1, 10) == clone:NextInteger(1, 10))
 end
 
+function m.schedulerDocsVirtualClockExample()
+	local env = getEnvironment()
+
+	local clock0 = os.clock()
+	env.scheduler:advance(1.5)
+
+	assert(os.clock() - clock0 == 1.5)
+	assert(time() == env.scheduler:now())
+end
+
+function m.schedulerDocsHeartbeatAdvancesExample()
+	local env = getEnvironment()
+	game:GetService("RunService").Heartbeat:Fire(0.25)
+
+	assert(time() == 0.25)
+end
+
+function m.servicesDocsAuthorityModeExample()
+	local env = createEnvironment({
+		workspace = {
+			AuthorityMode = "Server",
+		},
+	})
+
+	local workspace = env.game:GetService("Workspace")
+	assert(workspace.SignalBehavior == "Deferred")
+	assert(workspace.UseFixedSimulation == "Enabled")
+end
+
+function m.servicesDocsBindToSimulationExample()
+	local env = createEnvironment({
+		workspace = {
+			UseFixedSimulation = "Enabled",
+		},
+	})
+	local runService = env.game:GetService("RunService")
+
+	local count = 0
+	runService:BindToSimulation(function(dt)
+		count += 1
+	end, "Hz60")
+
+	env.scheduler:advance(1)
+	assert(count == 60)
+end
+
 return m

@@ -76,7 +76,9 @@ function Scheduler:_resumeThread(thread, args)
 		delay = math.max(yielded, 0)
 	end
 
-	self:_enqueue(self._now + delay, "thread", thread, packArgs(delay))
+	local item = self:_enqueue(self._now + delay, "thread", thread, packArgs(delay))
+	item.waitStart = self._now
+	item.isWaitResume = true
 end
 
 function Scheduler:_runItem(item)
@@ -85,7 +87,12 @@ function Scheduler:_runItem(item)
 	end
 
 	if item.kind == "thread" then
-		self:_resumeThread(item.payload, item.args)
+		if item.isWaitResume then
+			local actual = self._now - (item.waitStart or self._now)
+			self:_resumeThread(item.payload, packArgs(actual))
+		else
+			self:_resumeThread(item.payload, item.args)
+		end
 		return
 	end
 
