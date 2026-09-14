@@ -5,6 +5,8 @@ local modules = {
 	require("./networking_cases"),
 	require("./player_cases"),
 	require("./scheduler_and_memory_cases"),
+	require("./time_cases"),
+	require("./authority_cases"),
 	require("./docs_cases"),
 	require("./raycast_cases"),
 	require("./sweep_cases"),

@@ -169,7 +169,19 @@ function manifestRunner.getSearchRootForPattern(resolvedPattern: string): string
 	return searchRoot
 end
 
-local function discoverTestsFromLocations(testLocations, manifestFilePath: string, manifestMounts)
+local function cloneEnvironmentConfig(env)
+	if env == nil then
+		return nil
+	end
+	assert(type(env) == "table", "manifest environment must be a table")
+	local copy = {}
+	for key, value in pairs(env) do
+		copy[key] = value
+	end
+	return copy
+end
+
+local function discoverTestsFromLocations(testLocations, manifestFilePath: string, manifestMounts, environment)
 	assert(type(testLocations) == "table", "manifest.testLocations must be a table")
 
 	local discoveredTests = {}
@@ -199,6 +211,7 @@ local function discoverTestsFromLocations(testLocations, manifestFilePath: strin
 					cases = {},
 					mounts = manifestMounts,
 					discoverCases = true,
+					environment = cloneEnvironmentConfig(environment),
 				}
 			end
 		end
@@ -212,9 +225,10 @@ local function mergeDiscoveredTests(
 	testLocations,
 	manifestFilePath: string,
 	mounts,
-	errorPrefix: string
+	errorPrefix: string,
+	environment
 )
-	local discoveredTests = discoverTestsFromLocations(testLocations, manifestFilePath, mounts)
+	local discoveredTests = discoverTestsFromLocations(testLocations, manifestFilePath, mounts, environment)
 
 	for testName, testData in pairs(discoveredTests) do
 		local existingTestData = normalizedTests[testName]
@@ -358,6 +372,7 @@ local function normalizeWorkspaces(rawWorkspaces, manifestFilePath: string)
 
 		normalizedWorkspaces[workspaceName] = {
 			mounts = normalizeWorkspaceMounts(workspaceData, manifestFilePath),
+			environment = cloneEnvironmentConfig(workspaceData.environment),
 		}
 	end
 
@@ -385,7 +400,14 @@ local function normalizeManifestMounts(manifest, manifestFilePath: string)
 	return normalizedMounts
 end
 
-local function normalizeTest(testName: string, testData, manifestFilePath: string, manifestMounts, workspaces)
+local function normalizeTest(
+	testName: string,
+	testData,
+	manifestFilePath: string,
+	manifestMounts,
+	workspaces,
+	topEnvironment
+)
 	assert(type(testName) == "string", "manifest.tests keys must be strings")
 	assert(type(testData) == "table", `manifest.tests.{testName} must be a table`)
 	assert(type(testData.module) == "string", `manifest.tests.{testName}.module must be a string`)
@@ -393,6 +415,7 @@ local function normalizeTest(testName: string, testData, manifestFilePath: strin
 
 	local modulePath, moduleIsFile = normalizeModulePath(testData.module, manifestFilePath)
 	local mounts = manifestMounts
+	local environment = cloneEnvironmentConfig(topEnvironment)
 
 	if testData.workspace ~= nil then
 		assert(type(testData.workspace) == "string", `manifest.tests.{testName}.workspace must be a string`)
@@ -401,6 +424,13 @@ local function normalizeTest(testName: string, testData, manifestFilePath: strin
 		assert(workspaceData ~= nil, `unknown workspace: {testData.workspace}`)
 
 		mounts = workspaceData.mounts
+		if workspaceData.environment ~= nil then
+			environment = cloneEnvironmentConfig(workspaceData.environment)
+		end
+	end
+
+	if testData.environment ~= nil then
+		environment = cloneEnvironmentConfig(testData.environment)
 	end
 
 	assert(#mounts > 0, `manifest.tests.{testName} must resolve at least one mount`)
@@ -411,6 +441,7 @@ local function normalizeTest(testName: string, testData, manifestFilePath: strin
 		cases = testData.cases,
 		mounts = mounts,
 		discoverCases = false,
+		environment = environment,
 	}
 end
 
@@ -451,6 +482,16 @@ function manifestRunner.validateManifest(manifest)
 		assert(type(workspaceName) == "string", "manifest.workspaces keys must be strings")
 		assert(type(workspaceData) == "table", `manifest.workspaces.{workspaceName} must be a table`)
 		assert(type(workspaceData.mounts) == "table", `manifest.workspaces.{workspaceName}.mounts must be a table`)
+		if workspaceData.environment ~= nil then
+			assert(
+				type(workspaceData.environment) == "table",
+				`manifest.workspaces.{workspaceName}.environment must be a table`
+			)
+		end
+	end
+
+	if manifest.environment ~= nil then
+		assert(type(manifest.environment) == "table", "manifest.environment must be a table")
 	end
 
 	return manifest
@@ -467,11 +508,18 @@ local function loadManifestInternal(filePath: string, seenPaths)
 
 	assert(type(rawManifest) == "table", "manifest must return a table")
 
+	if rawManifest.environment ~= nil then
+		assert(type(rawManifest.environment) == "table", "manifest.environment must be a table")
+	end
+
+	local topEnvironment = cloneEnvironmentConfig(rawManifest.environment)
+
 	local normalizedManifest = {
 		tests = {},
 		mounts = {},
 		workspaces = {},
 		manifestFilePath = normalizedFilePath,
+		environment = topEnvironment,
 	}
 
 	local manifestMounts = normalizeManifestMounts(rawManifest, normalizedFilePath)
@@ -489,7 +537,7 @@ local function loadManifestInternal(filePath: string, seenPaths)
 		for testName, testData in pairs(rawManifest.tests) do
 			assert(normalizedManifest.tests[testName] == nil, `duplicate test suite: {testName}`)
 			normalizedManifest.tests[testName] =
-				normalizeTest(testName, testData, normalizedFilePath, manifestMounts, workspaces)
+				normalizeTest(testName, testData, normalizedFilePath, manifestMounts, workspaces, topEnvironment)
 		end
 	end
 
@@ -499,7 +547,8 @@ local function loadManifestInternal(filePath: string, seenPaths)
 			rawManifest.testLocations,
 			normalizedFilePath,
 			manifestMounts,
-			"duplicate test suite"
+			"duplicate test suite",
+			topEnvironment
 		)
 	end
 
@@ -511,7 +560,8 @@ local function loadManifestInternal(filePath: string, seenPaths)
 					workspaceData.testLocations,
 					normalizedFilePath,
 					workspaces[workspaceName].mounts,
-					`duplicate test suite in workspace {workspaceName}`
+					`duplicate test suite in workspace {workspaceName}`,
+					workspaces[workspaceName].environment or topEnvironment
 				)
 			end
 		end

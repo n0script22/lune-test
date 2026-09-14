@@ -1,8 +1,10 @@
 local RBXScriptSignal = {}
 RBXScriptSignal.__index = RBXScriptSignal
+RBXScriptSignal.__type = "RBXScriptSignal"
 
 local RBXScriptConnection = {}
 RBXScriptConnection.__index = RBXScriptConnection
+RBXScriptConnection.__type = "RBXScriptConnection"
 
 function RBXScriptConnection:Disconnect()
 	if not self.Connected then

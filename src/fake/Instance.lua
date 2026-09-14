@@ -2,6 +2,7 @@ local CFrame = require("./CFrame")
 local ClassData = require("./ClassData")
 local CsgService = require("./CsgService")
 local Signal = require("./Signal")
+local SimAccess = require("./SimAccess")
 local Vector3 = require("./Vector3")
 
 local Instance = {}
@@ -238,6 +239,8 @@ local function setParent(self, newParent)
 		return
 	end
 
+	SimAccess.assertParentWrite(rawget(self, "_runtime"), self, newParent)
+
 	if newParent ~= nil then
 		assert(
 			type(newParent) == "table" and newParent._isFakeRobloxInstance,
@@ -275,6 +278,8 @@ local function setName(self, value)
 		return
 	end
 
+	SimAccess.assertWrite(rawget(self, "_runtime"), self, "Name")
+
 	local parent = rawget(self, "_parent")
 
 	rawset(self, "_name", value)
@@ -291,6 +296,8 @@ local function setProperty(self, propertyName: string, value)
 	if rawget(self, "_destroyed") then
 		error(`Cannot set "{propertyName}" on destroyed instance "{rawget(self, "_name")}"`, 3)
 	end
+
+	SimAccess.assertWrite(rawget(self, "_runtime"), self, propertyName)
 
 	if self:IsA("BasePart") and setBasePartSpatialProperty(self, propertyName, value) then
 		return
@@ -500,6 +507,7 @@ function InstanceMethods:GetTags()
 end
 
 function InstanceMethods:Destroy()
+	SimAccess.assertMethod(rawget(self, "_runtime"), "Destroy")
 	if rawget(self, "_destroyed") then
 		return
 	end
@@ -539,6 +547,7 @@ function InstanceMethods:Destroy()
 end
 
 function InstanceMethods:ClearAllChildren()
+	SimAccess.assertMethod(rawget(self, "_runtime"), "ClearAllChildren")
 	local children = cloneArray(self._children)
 
 	for _, child in ipairs(children) do

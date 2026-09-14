@@ -48,6 +48,50 @@ assert(#order == 2)
 
 `task.cancel(handle)` marks a queued handle as cancelled. Cancelled items are skipped when the scheduler flushes.
 
+## Virtual clock
+
+All time sources advance together on one virtual clock driven by `scheduler:advance(dt)`:
+
+- `os.clock`, `os.time`, `os.date`, `os.difftime`
+- `time()` (game time; fixed-stepped when `UseFixedSimulation` is enabled)
+- `tick()` (local epoch time, with the documented inaccuracy caveat)
+- `workspace:GetServerTimeNow()` (monotonic server approx) and `workspace.DistributedGameTime`
+- `RunService.Stepped` time arg and `task.wait` / `task.delay` resume times
+
+```lua
+local env = getEnvironment()
+
+local clock0 = os.clock()
+env.scheduler:advance(1.5)
+
+assert(os.clock() - clock0 == 1.5)
+assert(time() == env.scheduler:now())
+```
+
+`task.wait` returns the actual elapsed time, not the requested duration (it resumes on the next Heartbeat after the duration elapses):
+
+```lua
+local elapsed
+task.spawn(function()
+	elapsed = task.wait(1)
+end)
+
+getEnvironment().scheduler:flush()
+getEnvironment().scheduler:advance(1.5)
+assert(elapsed == 1.5)
+```
+
+Firing `RunService.Heartbeat(dt)` advances the same clock:
+
+```lua
+local env = getEnvironment()
+game:GetService("RunService").Heartbeat:Fire(0.25)
+
+assert(time() == 0.25)
+```
+
+Set a fixed Unix base via `createEnvironment({ virtualClock = { unixBase = 1700000000 } })` or manifest `environment.virtualClock.unixBase` for deterministic `os.time` / `os.date` outputs. `os.clock` is for benchmarking durations; `os.time` follows the virtual device clock.
+
 ## Waiting
 
 `task.wait(seconds)` can only yield inside a scheduler-managed thread. Use `task.spawn` when testing yielding code directly.

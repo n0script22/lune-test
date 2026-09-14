@@ -18,7 +18,12 @@ local UDim = require("./UDim")
 local UDim2 = require("./UDim2")
 local Vector2 = require("./Vector2")
 local Vector3 = require("./Vector3")
+local Prediction = require("./Prediction")
+local SimBindings = require("./SimBindings")
+local VirtualClock = require("./VirtualClock")
 local paths = require("../runner/paths")
+
+local realOs = os
 
 local Environment = {}
 Environment.__index = Environment
@@ -54,6 +59,39 @@ local defaultEnum = {
 	SortDirection = {
 		Ascending = "Ascending",
 		Descending = "Descending",
+	},
+	AuthorityMode = {
+		Server = "Server",
+		Automatic = "Automatic",
+	},
+	SignalBehavior = {
+		Default = "Default",
+		Immediate = "Immediate",
+		Deferred = "Deferred",
+		AncestryDeferred = "AncestryDeferred",
+	},
+	StepFrequency = {
+		Hz60 = "Hz60",
+		Hz30 = "Hz30",
+		Hz15 = "Hz15",
+		Hz10 = "Hz10",
+		Hz5 = "Hz5",
+		Hz1 = "Hz1",
+	},
+	PredictionMode = {
+		Automatic = "Automatic",
+		On = "On",
+		Off = "Off",
+	},
+	PredictionStatus = {
+		Authoritative = "Authoritative",
+		Predicted = "Predicted",
+		None = "None",
+	},
+	RolloutState = {
+		Enabled = "Enabled",
+		Disabled = "Disabled",
+		Default = "Default",
 	},
 	RaycastFilterType = {
 		Exclude = "Exclude",
@@ -178,6 +216,8 @@ local function clonePublicConfig(config)
 		availableServices = cloneAvailableServices(config.availableServices, config.serviceOverrides),
 		serviceOverrides = cloneNestedTable(config.serviceOverrides),
 		datamodel = cloneNestedTable(config.datamodel),
+		workspace = cloneNestedTable(config.workspace),
+		virtualClock = cloneNestedTable(config.virtualClock),
 		globals = cloneNestedTable(config.globals),
 		isStudio = config.isStudio,
 		isServer = config.isServer,
@@ -329,6 +369,8 @@ function Environment.new(config)
 			availableServices = cloneAvailableServices(config.availableServices, config.serviceOverrides),
 			serviceOverrides = cloneNestedTable(config.serviceOverrides) or {},
 			datamodel = cloneNestedTable(config.datamodel) or {},
+			workspace = cloneNestedTable(config.workspace) or {},
+			virtualClock = cloneNestedTable(config.virtualClock) or {},
 			globals = cloneNestedTable(config.globals) or {},
 			isStudio = if config.isStudio ~= nil then config.isStudio else true,
 			isServer = if config.isServer ~= nil then config.isServer else true,
@@ -356,7 +398,17 @@ function Environment.new(config)
 		_customGlobals = {},
 		_installController = activeInstallController,
 		_isBaseEnvironment = false,
+		_inSchedulerAdvance = false,
+		_inSimCallback = false,
+		_isResimulating = false,
+		_simTick = 0,
+		_simTime = 0,
+		_simAccumulator = 0,
+		_pendingStitch = {},
 	}, Environment)
+
+	self._virtualClock = VirtualClock.new(config.virtualClock)
+	self._simBindings = SimBindings.new()
 
 	self.scheduler = Scheduler.new({
 		runtime = self,
@@ -384,6 +436,13 @@ function Environment.new(config)
 		new = function(className: string, parent)
 			return self:_newInstance(className, parent, false)
 		end,
+		fromExisting = function(template)
+			assert(
+				type(template) == "table" and template._isFakeRobloxInstance,
+				"Instance.fromExisting expects a fake Roblox instance"
+			)
+			return template:Clone()
+		end,
 	}
 
 	self.game = self:_newInstance("DataModel", nil, true)
@@ -407,6 +466,8 @@ function Environment.new(config)
 			self:getService(serviceName)
 		end
 	end
+	self:_applyConfiguredWorkspaceProperties()
+	self.config = rebuildFrozenPublicConfig(self._configState)
 
 	if config.activePlayers == nil then
 		if self._availableServices.Players and self._flags.isClient then
@@ -462,6 +523,34 @@ function Environment:_applyConfiguredDataModelProperties()
 	for key, value in pairs(self._configState.datamodel) do
 		self.game[key] = value
 	end
+	self:_applyConfiguredWorkspaceProperties()
+end
+
+local WORKSPACE_CONFIG_KEYS = {
+	AuthorityMode = true,
+	UseFixedSimulation = true,
+	SignalBehavior = true,
+	NextGenerationReplication = true,
+	StreamingEnabled = true,
+	DistributedGameTime = true,
+}
+
+function Environment:_applyConfiguredWorkspaceProperties()
+	local workspace = self._services.Workspace
+	if workspace == nil then
+		return
+	end
+	for key, value in pairs(self._configState.datamodel) do
+		if WORKSPACE_CONFIG_KEYS[key] then
+			workspace[key] = value
+		end
+	end
+	if self._configState.workspace ~= nil then
+		for key, value in pairs(self._configState.workspace) do
+			workspace[key] = value
+		end
+	end
+	self:_applyAuthorityModeDefaults(workspace)
 end
 
 function Environment:_updatePublicConfig()
@@ -535,8 +624,17 @@ function Environment:_newInstance(className: string, parent, allowNonCreatable: 
 	instance.AncestryChanged:Connect(function(changedInstance)
 		self:_onInstanceAncestryChanged(changedInstance)
 	end)
+	self:_trackStitchedInstance(instance)
 
 	return instance
+end
+
+function Environment:_trackStitchedInstance(instance)
+	if not self._inSimCallback then
+		return
+	end
+	instance._predictedGuid = `{instance.ClassName}:{self._simTick}:{ #self._pendingStitch + 1}`
+	table.insert(self._pendingStitch, instance)
 end
 
 function Environment:_configureInstance(instance)
@@ -658,9 +756,27 @@ end
 function Environment:_createRunService()
 	local service = self:_newInstance("RunService", self.game, true)
 	service.Name = "RunService"
-	service.Heartbeat = Signal.new("RunService.Heartbeat", self._signalRegistry)
+	local heartbeat = Signal.new("RunService.Heartbeat", self._signalRegistry)
+	local heartbeatFire = heartbeat.Fire
+	heartbeat.Fire = function(signal, dt)
+		local step = if type(dt) == "number" then math.max(dt, 0) else 0
+		if self._inSchedulerAdvance then
+			heartbeatFire(signal, step)
+			return
+		end
+		if step > 0 then
+			self.scheduler:advance(step)
+		else
+			heartbeatFire(signal, step)
+		end
+	end
+	service.Heartbeat = heartbeat
 	service.Stepped = Signal.new("RunService.Stepped", self._signalRegistry)
 	service.RenderStepped = Signal.new("RunService.RenderStepped", self._signalRegistry)
+	service.PreSimulation = Signal.new("RunService.PreSimulation", self._signalRegistry)
+	service.PostSimulation = Signal.new("RunService.PostSimulation", self._signalRegistry)
+	service.Misprediction = Signal.new("RunService.Misprediction", self._signalRegistry)
+	service.Rollback = Signal.new("RunService.Rollback", self._signalRegistry)
 	service.IsStudio = function()
 		return self._flags.isStudio
 	end
@@ -670,7 +786,186 @@ function Environment:_createRunService()
 	service.IsClient = function()
 		return self._flags.isClient
 	end
+	service.IsResimulating = function()
+		return self._isResimulating == true
+	end
+	service.BindToSimulation = function(_, fn, freq, prio)
+		local workspace = self._services.Workspace
+		if workspace == nil or workspace.UseFixedSimulation ~= "Enabled" then
+			error("RunService:BindToSimulation() is only available when Workspace.UseFixedSimulation is enabled", 2)
+		end
+		return self._simBindings:bind(fn, freq, prio, "sim")
+	end
+	service.BindToAnimation = function(_, fn, freq, prio)
+		return self._simBindings:bind(fn, freq, prio, "anim")
+	end
 	return service
+end
+
+function Environment:_createWorkspaceService()
+	local service = self:_newInstance("Workspace", self.game, true)
+	service.Name = "Workspace"
+	service.DistributedGameTime = 0
+	service.AuthorityMode = "Automatic"
+	service.UseFixedSimulation = "Disabled"
+	service.SignalBehavior = "Default"
+	service.NextGenerationReplication = "Disabled"
+	service.StreamingEnabled = true
+	service.GetServerTimeNow = function()
+		return self._virtualClock:serverTime(self.scheduler:now())
+	end
+	self:_applyAuthorityModeDefaults(service)
+	return service
+end
+
+function Environment:_applyAuthorityModeDefaults(workspace)
+	if workspace == nil then
+		workspace = self._services.Workspace
+	end
+	if workspace == nil or workspace.AuthorityMode ~= "Server" then
+		return
+	end
+	if workspace.NextGenerationReplication == "Disabled" then
+		workspace.NextGenerationReplication = "Enabled"
+	end
+	if workspace.SignalBehavior == "Default" then
+		workspace.SignalBehavior = "Deferred"
+	end
+	if workspace.UseFixedSimulation == "Disabled" then
+		workspace.UseFixedSimulation = "Enabled"
+	end
+	workspace.StreamingEnabled = true
+end
+
+function Environment:getWallTime(): number
+	return self.scheduler:now()
+end
+
+function Environment:useFixedSimulation(): boolean
+	local workspace = self._services.Workspace
+	return workspace ~= nil and workspace.UseFixedSimulation == "Enabled"
+end
+
+function Environment:getGameTime(): number
+	if self:useFixedSimulation() then
+		return self._simTime
+	end
+	return self.scheduler:now()
+end
+
+function Environment:_runSimTick()
+	local base = 1 / 60
+	self._simTick += 1
+	self._simTime += base
+	self._pendingStitch = {}
+	self._inSimCallback = true
+	self._simBindings:runTick(self._simTick, function(fn, dt)
+		fn(dt)
+	end)
+	self._inSimCallback = false
+	for _, stitched in ipairs(self._pendingStitch) do
+		if not self:_isInDataModel(stitched) then
+			error(
+				"Instances created inside a simulation callback must be parented into the DataModel hierarchy before the end of that frame",
+				0
+			)
+		end
+	end
+	self._pendingStitch = {}
+end
+
+function Environment:getReplicatedAttributes(instance)
+	local attributes = rawget(instance, "_attributes") or {}
+	return Prediction.filterReplicated(attributes)
+end
+
+function Environment:forceMispredict(spec)
+	spec = spec or {}
+	local targetTime = spec.time or self:getGameTime()
+	local authoritative = spec.authoritative or {}
+	local runService = self._services.RunService
+
+	local predictedByInstance = {}
+	for _, entry in ipairs(authoritative) do
+		local current = {}
+		for name, _ in pairs(entry.attributes or {}) do
+			current[name] = entry.instance:GetAttribute(name)
+		end
+		predictedByInstance[entry.instance] = current
+	end
+
+	if runService ~= nil then
+		runService.Rollback:Fire(targetTime)
+	end
+	self._isResimulating = true
+
+	for _, entry in ipairs(authoritative) do
+		for name, value in pairs(entry.attributes or {}) do
+			entry.instance:SetAttribute(name, value)
+		end
+	end
+
+	local base = 1 / 60
+	local ticks = 1
+	if self:useFixedSimulation() then
+		ticks = math.max(1, math.floor((self:getGameTime() - targetTime) / base + 0.5))
+		for _ = 1, ticks do
+			self:_runSimTick()
+		end
+	end
+
+	local instances = {}
+	for _, entry in ipairs(authoritative) do
+		local predicted = predictedByInstance[entry.instance] or {}
+		local attrDiff = {}
+		for name, authValue in pairs(entry.attributes or {}) do
+			attrDiff[name] = {
+				Predicted = predicted[name],
+				Authoritative = authValue,
+			}
+		end
+		table.insert(instances, {
+			Instance = entry.instance,
+			Attributes = attrDiff,
+		})
+	end
+
+	if runService ~= nil then
+		runService.Misprediction:Fire(targetTime, instances, {
+			ResimulationTime = ticks * base,
+		})
+	end
+	self._isResimulating = false
+end
+
+function Environment:inspectPrediction()
+	local predictedCount = 0
+	local workspace = self._services.Workspace
+	if workspace ~= nil then
+		for _, descendant in ipairs(workspace:GetDescendants()) do
+			if descendant:GetAttribute("Health") ~= nil then
+				predictedCount += 1
+			end
+		end
+	end
+	return {
+		predictedInstanceCount = predictedCount,
+		simTick = self._simTick,
+		simTime = self._simTime,
+		isResimulating = self._isResimulating,
+	}
+end
+
+function Environment:_advanceFixedSimulation(wallDelta: number)
+	if not self:useFixedSimulation() then
+		return
+	end
+	local base = 1 / 60
+	self._simAccumulator += math.max(wallDelta, 0)
+	while self._simAccumulator + 1e-9 >= base do
+		self._simAccumulator -= base
+		self:_runSimTick()
+	end
 end
 
 function Environment:_createCollectionService()
@@ -1172,6 +1467,32 @@ function Environment:getService(serviceName: string)
 	return service
 end
 
+function Environment:_makeVirtualOs()
+	local virtualOs = {}
+	for key, value in pairs(realOs) do
+		virtualOs[key] = value
+	end
+	virtualOs.clock = function()
+		return self._virtualClock:osClock(self.scheduler:now())
+	end
+	virtualOs.time = function(timeTable)
+		if timeTable ~= nil then
+			return realOs.time(timeTable)
+		end
+		return self._virtualClock:osTime(self.scheduler:now())
+	end
+	virtualOs.date = function(formatString, virtualTime)
+		if virtualTime ~= nil then
+			return realOs.date(formatString, virtualTime)
+		end
+		return realOs.date(formatString, self._virtualClock:osTime(self.scheduler:now()))
+	end
+	virtualOs.difftime = function(t2, t1)
+		return t2 - t1
+	end
+	return virtualOs
+end
+
 function Environment:_refreshGlobals()
 	local globals = {
 		BrickColor = BrickColor,
@@ -1187,6 +1508,13 @@ function Environment:_refreshGlobals()
 		Vector3 = Vector3,
 		game = self.game,
 		task = self.task,
+		os = self:_makeVirtualOs(),
+		time = function()
+			return self:getGameTime()
+		end,
+		tick = function()
+			return self._virtualClock:tick(self.scheduler:now())
+		end,
 	}
 
 	for serviceName in pairs(self._services) do
@@ -1213,15 +1541,26 @@ function Environment:_refreshGlobals()
 end
 
 function Environment:_onSchedulerAdvanced(deltaTime: number)
+	self:_advanceFixedSimulation(deltaTime)
+
+	local workspace = self._services.Workspace
+	if workspace ~= nil then
+		workspace.DistributedGameTime = self.scheduler:now()
+	end
+
 	local runService = self._services.RunService
 
 	if runService == nil then
 		return
 	end
 
+	self._inSchedulerAdvance = true
+	runService.PreSimulation:Fire(deltaTime)
+	runService.PostSimulation:Fire(deltaTime)
 	runService.Heartbeat:Fire(deltaTime)
 	runService.Stepped:Fire(self.scheduler:now(), deltaTime)
 	runService.RenderStepped:Fire(deltaTime)
+	self._inSchedulerAdvance = false
 end
 
 function Environment:_onInstanceAncestryChanged(instance)
@@ -1413,6 +1752,12 @@ function Environment:configure(config)
 		end
 	end
 
+	if config.workspace ~= nil then
+		for key, value in pairs(config.workspace) do
+			self._configState.workspace[key] = value
+		end
+	end
+
 	if config.globals ~= nil then
 		for key, value in pairs(config.globals) do
 			self._configState.globals[key] = value
@@ -1447,6 +1792,8 @@ function Environment:reset(config)
 		nextConfig.availableServices = cloneNestedTable(self._configState.availableServices)
 		nextConfig.serviceOverrides = cloneNestedTable(self._configState.serviceOverrides)
 		nextConfig.datamodel = cloneNestedTable(self._configState.datamodel)
+		nextConfig.workspace = cloneNestedTable(self._configState.workspace)
+		nextConfig.virtualClock = cloneNestedTable(self._configState.virtualClock)
 		nextConfig.globals = cloneNestedTable(self._configState.globals)
 		nextConfig.isStudio = self._configState.isStudio
 		nextConfig.isServer = self._configState.isServer
