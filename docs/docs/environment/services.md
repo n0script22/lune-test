@@ -122,7 +122,7 @@ assert(workspace:Raycast(Vector3.new(0, 0.9, 0.9), Vector3.new(10, 0, 0)) == nil
 assert(workspace:Raycast(Vector3.new(0, 0, 0), Vector3.new(10, 0, 0)).Instance == ball)
 ```
 
-`UnionOperation` and `MeshPart` are `BasePart`s whose queries follow `CollisionFidelity` (verified against Studio): `Box` casts the bounding box, `Hull` a single convex hull, and `Default`/`PreciseConvexDecomposition` the exact convex decomposition. The same rule applies when a union or mesh is the shapecast caster. Concave unions come from the real CSG APIs — `Part:UnionAsync`/`SubtractAsync`/`IntersectAsync` (single result) or `GeometryService` (array result, `SplitApart` defaulting to `true`; mesh input yields mesh output). Results are bbox-centered with their decomposition stored, so later `Size` edits scale the geometry:
+`UnionOperation` and `MeshPart` are `BasePart`s whose queries follow `CollisionFidelity` (verified against Studio): `Box` casts the bounding box, `Hull` a single convex hull, and `Default`/`PreciseConvexDecomposition` the exact convex decomposition. The same rule applies when a union or mesh is the shapecast caster. Concave unions come from the real CSG APIs — `Part:UnionAsync`/`SubtractAsync`/`IntersectAsync` (single result) or `GeometryService` (array result, `SplitApart` defaulting to `true`; mesh input yields mesh output). Results are bbox-centered with their decomposition stored, so later `Size` edits scale the geometry and `Clone()` carries the decomposition over:
 
 ```lua
 local slab = Instance.new("Part", workspace)
