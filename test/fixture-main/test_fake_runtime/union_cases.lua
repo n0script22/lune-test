@@ -349,8 +349,7 @@ function m.shapecastWedgeCasterVsUnionTarget()
 	assertEqual(hit.Instance, u)
 end
 
-function m.shapecastUnionCasterNotchPassesThrough()
-	local env = createEnvironment({
+function m.shapecastUnionCasterNotchPassesThrough()	local env = createEnvironment({
 		activePlayers = {},
 	})
 	local workspace = env.globals.Workspace
@@ -395,6 +394,68 @@ function m.shapecastUnionCasterNotchPassesThrough()
 	assertEqual(wallHit.Instance, wall)
 	assertClose(wallHit.Distance, 11, 1e-6, "wall distance")
 	assertEqual(wallHit.Normal, Vector3.new(0, 0, -1))
+end
+
+function m.sweepExactTouchUnionCountsAsHit()
+	local env = createEnvironment({
+		activePlayers = {},
+	})
+	local workspace = env.globals.Workspace
+
+	local a = env.Instance.new("Part", workspace)
+	a.Size = Vector3.new(4, 4, 4)
+	a.CFrame = CFrame.new(0, 900, 0)
+
+	local b = env.Instance.new("Part", workspace)
+	b.Size = Vector3.new(4, 4, 4)
+	b.CFrame = CFrame.new(1, 902, 0)
+
+	local u = a:UnionAsync({ b }, Enum.CollisionFidelity.PreciseConvexDecomposition)
+	assert(u ~= nil, "expected union result")
+	u.Parent = workspace
+	a:Destroy()
+	b:Destroy()
+
+	-- Engine (verified against Studio): sweeps count exact-touch (t = 1) as
+	-- hits against unions, while rays exclude it.
+	u.CollisionFidelity = Enum.CollisionFidelity.PreciseConvexDecomposition
+	local blockHit = workspace:Blockcast(
+		CFrame.new(1, 900, 6.5),
+		Vector3.new(1, 1, 1),
+		Vector3.new(0, 0, -4),
+		RaycastParams.new()
+	)
+	assert(blockHit ~= nil, "exact-touch blockcast must hit the union")
+	assertEqual(blockHit.Instance, u)
+
+	local sphereHit =
+		workspace:Spherecast(Vector3.new(1, 900, 6), 1, Vector3.new(0, 0, -3))
+	assert(sphereHit ~= nil, "exact-touch spherecast must hit the union")
+	assertEqual(sphereHit.Instance, u)
+
+	assertEqual(
+		workspace:Raycast(Vector3.new(1, 900, 10), Vector3.new(0, 0, -8), RaycastParams.new()),
+		nil
+	)
+
+	-- Plain-part twins pin the shared sweep cores (unchanged behavior).
+	local wall = env.Instance.new("Part", workspace)
+	wall.Size = Vector3.new(4, 4, 4)
+	wall.CFrame = CFrame.new(30, 900, 0)
+
+	assert(
+		workspace:Blockcast(
+			CFrame.new(30, 900, 6.5),
+			Vector3.new(1, 1, 1),
+			Vector3.new(0, 0, -4),
+			RaycastParams.new()
+		) ~= nil,
+		"exact-touch blockcast must hit a part"
+	)
+	assert(
+		workspace:Spherecast(Vector3.new(30, 900, 6), 1, Vector3.new(0, 0, -3)) ~= nil,
+		"exact-touch spherecast must hit a part"
+	)
 end
 
 return m

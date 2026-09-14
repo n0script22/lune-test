@@ -224,8 +224,14 @@ function SweepConvex.sweepConvexVsConvex(caster, direction, target)
 	if allOverlapping then
 		return nil
 	end
-	if bestT > 1 then
+	-- Engine (verified against Studio): sweeps count exact-touch (t = 1) as
+	-- hits, including against union decomposition geometry, whose
+	-- triangulation-diagonal edge axes can push bestT a dust above 1.
+	if bestT > 1 + 1e-9 then
 		return nil
+	end
+	if bestT > 1 then
+		bestT = 1
 	end
 	if bestNormal == nil then
 		bestNormal = target.normals[1]

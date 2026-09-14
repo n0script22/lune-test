@@ -422,7 +422,9 @@ local function sweepSphereVsConvex(origin, direction, movingRadius, insideFn, di
 		end
 	end
 	local tMin = (lo + hi) / 2
-	if distAt(tMin) > movingRadius then
+	-- Engine (verified against Studio): sweeps count exact-touch as hits;
+	-- the slack absorbs float dust at the contact boundary.
+	if distAt(tMin) > movingRadius + 1e-9 then
 		return nil
 	end
 
