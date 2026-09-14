@@ -542,4 +542,20 @@ function m.geometryServiceSubtractAndIntersect()
 	assertEqual(overlap[1].Size, Vector3.new(2, 4, 4))
 end
 
+
+function m.unionAndMeshAreCreatableBaseParts()
+	local env = createEnvironment({
+		activePlayers = {},
+	})
+	local workspace = env.globals.Workspace
+
+	local u = env.Instance.new("UnionOperation", workspace)
+	local mp = env.Instance.new("MeshPart", workspace)
+	assert(u:IsA("BasePart"), "UnionOperation must be a BasePart")
+	assert(mp:IsA("BasePart"), "MeshPart must be a BasePart")
+	assertEqual(u.CollisionFidelity, Enum.CollisionFidelity.Box)
+	assertEqual(mp.CollisionFidelity, Enum.CollisionFidelity.Box)
+	assertEqual(mp.MeshId, "")
+end
+
 return m

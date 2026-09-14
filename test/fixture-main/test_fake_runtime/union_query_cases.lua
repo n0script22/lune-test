@@ -998,4 +998,31 @@ function m.raycastHitsSpawnLocation()
 	assertEqual(hit.Instance, spawn)
 end
 
+
+function m.emptyUnionCastsAsBox()
+	local env = createEnvironment({
+		activePlayers = {},
+	})
+	local workspace = env.globals.Workspace
+
+	local u = env.Instance.new("UnionOperation", workspace)
+	u.Size = Vector3.new(4, 4, 4)
+	u.Position = Vector3.new(0, 100, 0)
+
+	local hit = workspace:Raycast(Vector3.new(0, 100, -10), Vector3.new(0, 0, 20), RaycastParams.new())
+	assert(hit ~= nil, "empty union must cast as its bounding box")
+	assertEqual(hit.Instance, u)
+	assertEqual(hit.Position, Vector3.new(0, 100, -2))
+	assertEqual(hit.Normal, Vector3.new(0, 0, -1))
+
+	local mp = env.Instance.new("MeshPart", workspace)
+	mp.Size = Vector3.new(4, 4, 4)
+	mp.Position = Vector3.new(20, 100, 0)
+
+	local meshHit =
+		workspace:Raycast(Vector3.new(20, 100, -10), Vector3.new(0, 0, 20), RaycastParams.new())
+	assert(meshHit ~= nil, "empty mesh must cast as its bounding box")
+	assertEqual(meshHit.Instance, mp)
+end
+
 return m
