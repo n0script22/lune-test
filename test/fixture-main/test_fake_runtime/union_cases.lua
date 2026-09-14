@@ -495,4 +495,37 @@ function m.clonePreservesUnionDecomposition()
 	assertEqual(hit.Instance, copy)
 end
 
+function m.shapecastUnionCasterVsBallTarget()
+	local env = createEnvironment({
+		activePlayers = {},
+	})
+	local workspace = env.globals.Workspace
+
+	local a = env.Instance.new("Part", workspace)
+	a.Size = Vector3.new(4, 4, 4)
+	a.CFrame = CFrame.new(0, 1800, 0)
+
+	local b = env.Instance.new("Part", workspace)
+	b.Size = Vector3.new(4, 4, 4)
+	b.CFrame = CFrame.new(1, 1802, 0)
+
+	local cast = a:UnionAsync({ b }, Enum.CollisionFidelity.PreciseConvexDecomposition)
+	assert(cast ~= nil, "expected union caster")
+	cast.Parent = workspace
+	a:Destroy()
+	b:Destroy()
+
+	local ball = env.Instance.new("Part", workspace)
+	ball.Shape = Enum.PartType.Ball
+	ball.Size = Vector3.new(2, 2, 2)
+	ball.CFrame = CFrame.new(1, 1800, 10)
+
+	cast.CollisionFidelity = Enum.CollisionFidelity.PreciseConvexDecomposition
+	local hit = workspace:Shapecast(cast, Vector3.new(0, 0, 30), RaycastParams.new())
+	assert(hit ~= nil, "union caster must hit the ball")
+	assertEqual(hit.Instance, ball)
+	assertClose(hit.Distance, 7, 1e-6, "ball distance")
+	assertEqual(hit.Normal, Vector3.new(0, 0, -1))
+end
+
 return m

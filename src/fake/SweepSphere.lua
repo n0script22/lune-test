@@ -525,19 +525,21 @@ function SweepSphere.sweepWedgeVsSphere(
 end
 
 -- Union/mesh caster (world convex list, rigid) vs a ball target (world
--- sphere). Exact sphere math per convex, like sweepWedgeVsSphere but without
--- the role-swap: the sphere center sweeps directly against each static
--- convex. Returns t, sphere-outward normal, caster-side contact.
+-- sphere). The moving caster is equivalent to a static caster with the
+-- sphere center sweeping back, exactly like sweepWedgeVsSphere's role-swap.
+-- Exact sphere math per convex. Returns t, sphere-outward normal,
+-- caster-side contact.
 function SweepSphere.sweepConvexListVsSphere(worldConvexes, direction, sphereCenter, sphereRadius)
 	if ConvexDecomp.pointStrictlyInConvexes(sphereCenter, worldConvexes) then
 		return nil
 	end
 
 	local best = nil
+	local revDir = direction * -1
 
 	for _, convex in ipairs(worldConvexes) do
 		local single = { convex }
-		local hit = sweepSphereVsConvex(sphereCenter, direction, sphereRadius, function(p)
+		local hit = sweepSphereVsConvex(sphereCenter, revDir, sphereRadius, function(p)
 			return ConvexDecomp.pointStrictlyInConvexes(p, single)
 		end, function(p)
 			return ConvexDecomp.distPointConvex(p, convex)
@@ -552,15 +554,18 @@ function SweepSphere.sweepConvexListVsSphere(worldConvexes, direction, sphereCen
 		return nil
 	end
 
-	local centerAtTOI = sphereCenter + direction * best.t
-	local off = best.contact - centerAtTOI
+	-- The caster advanced by direction*t: translate the static-frame contact
+	-- onto the moved caster, then take the sphere-outward normal from the
+	-- (static) sphere center, mirroring sweepWedgeVsSphere.
+	local contactWorld = best.contact + direction * best.t
+	local off = contactWorld - sphereCenter
 	local len = math.sqrt(off.X * off.X + off.Y * off.Y + off.Z * off.Z)
 
 	if len < 1e-9 then
 		return nil
 	end
 
-	return { t = best.t, normal = off / len, contact = best.contact }
+	return { t = best.t, normal = off / len, contact = contactWorld }
 end
 
 return SweepSphere
