@@ -35,4 +35,5 @@ return {
 	UDim2 = require("./UDim2"),
 	BrickColor = require("./BrickColor"),
 	Random = require("./Random"),
+	RaycastParams = require("./RaycastParams"),
 }

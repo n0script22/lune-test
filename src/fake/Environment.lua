@@ -4,11 +4,16 @@ local serde = require("@lune/serde")
 local BrickColor = require("./BrickColor")
 local CFrame = require("./CFrame")
 local ClassData = require("./ClassData")
+local CollisionGroups = require("./CollisionGroups")
 local Color3 = require("./Color3")
+local CsgService = require("./CsgService")
 local InstanceModule = require("./Instance")
 local Random = require("./Random")
+local RaycastParams = require("./RaycastParams")
 local Scheduler = require("./Scheduler")
 local Signal = require("./Signal")
+local RayQuery = require("./RayQuery")
+local SweepQuery = require("./SweepQuery")
 local UDim = require("./UDim")
 local UDim2 = require("./UDim2")
 local Vector2 = require("./Vector2")
@@ -28,6 +33,7 @@ local activeInstallController = nil
 
 local defaultAvailableServices = {
 	CollectionService = true,
+	GeometryService = true,
 	MemoryStoreService = true,
 	Players = true,
 	ReplicatedStorage = true,
@@ -39,6 +45,7 @@ local defaultAvailableServices = {
 
 local builtInServiceNames = {
 	"CollectionService",
+	"GeometryService",
 	"MemoryStoreService",
 	"Players",
 	"ReplicatedStorage",
@@ -85,6 +92,39 @@ local defaultEnum = {
 		Enabled = "Enabled",
 		Disabled = "Disabled",
 		Default = "Default",
+	},
+	RaycastFilterType = {
+		Exclude = "Exclude",
+		Include = "Include",
+	},
+	Material = {
+		Plastic = "Plastic",
+		SmoothPlastic = "SmoothPlastic",
+		Wood = "Wood",
+		Metal = "Metal",
+		Glass = "Glass",
+		DiamondPlate = "DiamondPlate",
+		Neon = "Neon",
+		Grass = "Grass",
+		Water = "Water",
+	},
+	PartType = {
+		Ball = "Ball",
+		Block = "Block",
+		Cylinder = "Cylinder",
+		Wedge = "Wedge",
+		CornerWedge = "CornerWedge",
+	},
+	CollisionFidelity = {
+		Box = "Box",
+		Hull = "Hull",
+		Default = "Default",
+		PreciseConvexDecomposition = "PreciseConvexDecomposition",
+	},
+	RenderFidelity = {
+		Automatic = "Automatic",
+		Precise = "Precise",
+		Performance = "Performance",
 	},
 }
 
@@ -569,8 +609,8 @@ end
 function Environment:_newInstance(className: string, parent, allowNonCreatable: boolean?)
 	local allowedClassNames = self._availableInstanceTypes
 
-	if allowNonCreatable and not ClassData.isCreatable(className) then
-		allowedClassNames = shallowClone(self._availableInstanceTypes)
+	if allowNonCreatable then
+		allowedClassNames = normalizeSet(ClassData.list(), nil)
 		allowedClassNames.__allowNonCreatable = true
 	end
 
@@ -1290,6 +1330,65 @@ function Environment:_createMemoryStoreService()
 	return service
 end
 
+function Environment:_createWorkspaceService()
+	local service = self:_newInstance("Workspace", self.game, true)
+	service.Name = "Workspace"
+	service._collisionGroupData = CollisionGroups.new()
+	service.Raycast = function(raycastWorkspace, origin, direction, raycastParams)
+		return RayQuery.raycast(raycastWorkspace, origin, direction, raycastParams)
+	end
+	service.Blockcast = function(blockcastWorkspace, cframe, size, direction, raycastParams)
+		return SweepQuery.blockcast(blockcastWorkspace, cframe, size, direction, raycastParams)
+	end
+	service.Spherecast = function(spherecastWorkspace, position, radius, direction, raycastParams)
+		return SweepQuery.spherecast(spherecastWorkspace, position, radius, direction, raycastParams)
+	end
+	service.Shapecast = function(shapecastWorkspace, part, direction, raycastParams)
+		return SweepQuery.shapecast(shapecastWorkspace, part, direction, raycastParams)
+	end
+	service.RegisterCollisionGroup = function(workspaceService, name: string)
+		return CollisionGroups.register(workspaceService._collisionGroupData, name)
+	end
+	service.UnregisterCollisionGroup = function(workspaceService, name: string)
+		return CollisionGroups.unregister(workspaceService._collisionGroupData, name)
+	end
+	service.RenameCollisionGroup = function(workspaceService, fromName: string, toName: string)
+		return CollisionGroups.rename(workspaceService._collisionGroupData, fromName, toName)
+	end
+	service.CollisionGroupSetCollidable = function(workspaceService, groupA: string, groupB: string, collidable: boolean)
+		return CollisionGroups.setCollidable(workspaceService._collisionGroupData, groupA, groupB, collidable)
+	end
+	service.CollisionGroupsAreCollidable = function(workspaceService, groupA: string, groupB: string)
+		return CollisionGroups.areCollidable(workspaceService._collisionGroupData, groupA, groupB)
+	end
+	service.IsCollisionGroupRegistered = function(workspaceService, name: string)
+		return CollisionGroups.isRegistered(workspaceService._collisionGroupData, name)
+	end
+	service.GetRegisteredCollisionGroups = function(workspaceService)
+		return CollisionGroups.list(workspaceService._collisionGroupData)
+	end
+	local terrain = self:_newInstance("Terrain", service, true)
+	terrain.Name = "Terrain"
+	return service
+end
+
+function Environment:_createGeometryService()
+	local service = self:_newInstance("GeometryService", self.game, true)
+	service.Name = "GeometryService"
+	-- Raw fields (not properties): these names collide with the BasePart
+	-- CSG methods, which InstanceMethods would otherwise shadow.
+	rawset(service, "UnionAsync", function(_, part, parts, options)
+		return CsgService.geometryOp(self, part, parts, "Union", "GeometryService:UnionAsync", options)
+	end)
+	rawset(service, "SubtractAsync", function(_, part, parts, options)
+		return CsgService.geometryOp(self, part, parts, "Subtract", "GeometryService:SubtractAsync", options)
+	end)
+	rawset(service, "IntersectAsync", function(_, part, parts, options)
+		return CsgService.geometryOp(self, part, parts, "Intersect", "GeometryService:IntersectAsync", options)
+	end)
+	return service
+end
+
 function Environment:_createGenericService(serviceName: string)
 	if ClassData.isSupported(serviceName) then
 		local service = self:_newInstance(serviceName, self.game, true)
@@ -1310,6 +1409,10 @@ function Environment:_instantiateService(serviceName: string)
 
 	if serviceName == "CollectionService" then
 		return self:_createCollectionService()
+	end
+
+	if serviceName == "GeometryService" then
+		return self:_createGeometryService()
 	end
 
 	if serviceName == "Players" then
@@ -1398,6 +1501,7 @@ function Environment:_refreshGlobals()
 		Enum = defaultEnum,
 		Instance = self.Instance,
 		Random = Random,
+		RaycastParams = RaycastParams,
 		UDim = UDim,
 		UDim2 = UDim2,
 		Vector2 = Vector2,

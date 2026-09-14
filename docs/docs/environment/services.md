@@ -42,11 +42,125 @@ env:uninstall()
 
 ## Instance Services
 
-Generic services such as `ReplicatedStorage`, `ServerScriptService`, `StarterPlayer`, and `Workspace` are fake instances. Mounted modules are parented under these services and can be resolved lazily when a test accesses them.
+Generic services such as `ReplicatedStorage`, `ServerScriptService`, and `StarterPlayer` are fake instances. Mounted modules are parented under these services and can be resolved lazily when a test accesses them.
 
 ```lua
 local shared = game:GetService("ReplicatedStorage")
 local module = require(shared.SomeModule)
+```
+
+## Workspace
+
+`Workspace` holds live 3D objects and supports geometric queries against `BasePart` descendants (including `Workspace.Terrain`). Shapes are respected (all verified against Studio): `Block` casts as an oriented box, `Ball` as a sphere (radius `min(Size)/2`), `Cylinder` as an X-axis cylinder (length `Size.X`, radius `min(Size.Y, Size.Z)/2`), `Wedge` as a ramp with its tall face at `+Z` tapering to the `-Z` bottom edge (solid `y <= z`), and `CornerWedge` as a double ramp peaking at the (`+X`, `-Z`) top corner (solid `y <= min(x, -z)`):
+
+```lua
+local wall = Instance.new("Part", workspace)
+wall.Name = "Wall"
+wall.Position = Vector3.new(5, 0, 0)
+wall.Size = Vector3.new(2, 2, 2)
+
+local hit = workspace:Raycast(Vector3.new(0, 0, 0), Vector3.new(10, 0, 0))
+
+assert(hit.Instance == wall)
+assert(hit.Position == Vector3.new(4, 0, 0))
+assert(hit.Distance == 4)
+assert(hit.Normal == Vector3.new(-1, 0, 0))
+assert(hit.Material == Enum.Material.Plastic)
+```
+
+The direction vector encodes the max distance, so rays shorter than the gap miss — and a ray ending exactly on a face misses too (hits need `t < 1`). A `nil` result means no eligible part was hit. A ray starting inside a part passes through it (but can still hit parts beyond).
+
+Use `ExcludeInstances`/`IncludeInstances` to filter candidates (exclusions win; an empty include list hits nothing):
+
+```lua
+local params = RaycastParams.new()
+params.ExcludeInstances = { character }
+
+local hit = workspace:Raycast(origin, direction, params)
+```
+
+Parts with `CanQuery` off are skipped (`RespectCanCollide` swaps the check to `CanCollide`; `BruteForceAllSlow` skips only `CanQuery`/`CanCollide` — collision groups, `Exclude`/`Include` filters and `IgnoreWater` still apply). Collision groups registered with `RegisterCollisionGroup` participate too: parts whose group is non-collidable with the query `CollisionGroup` are ignored. Renaming a group onto an existing name is a silent no-op.
+
+```lua
+workspace:RegisterCollisionGroup("Ghosts")
+workspace:RegisterCollisionGroup("Walls")
+workspace:CollisionGroupSetCollidable("Ghosts", "Walls", false)
+
+local params = RaycastParams.new()
+params.CollisionGroup = "Ghosts"
+
+assert(workspace:Raycast(origin, direction, params) == nil)
+```
+
+`Workspace.Terrain` exists by default with an empty volume, so it never hits until a test gives it `Position` and `Size`. Water terrain is skipped when `IgnoreWater` is set:
+
+```lua
+workspace.Terrain.Position = Vector3.new(0, -6, 0)
+workspace.Terrain.Size = Vector3.new(100, 2, 100)
+
+local hit = workspace:Raycast(Vector3.new(0, 10, 0), Vector3.new(0, -30, 0))
+assert(hit.Instance == workspace.Terrain)
+```
+
+Shape queries sweep a volume along a direction and skip parts the shape starts inside; unlike rays, sweeps count exact-touch (`t = 1`) as hits. `Ball` targets sweep as spheres (radius `min(Size)/2`) and `Cylinder` targets sweep as X-axis cylinders; `Wedge`/`CornerWedge` targets sweep as boxes. Casters follow the same rule: `Ball` parts cast as spheres, `Block`/`Cylinder` parts cast as boxes, and `Wedge`/`CornerWedge` parts cast with their exact shape (all matching the engine):
+
+```lua
+local hit = workspace:Spherecast(Vector3.new(0, 0, 0), 1, Vector3.new(10, 0, 0))
+local blockHit = workspace:Blockcast(CFrame.new(0, 0, 0), Vector3.new(2, 2, 2), Vector3.new(10, 0, 0))
+local shapeHit = workspace:Shapecast(handle, Vector3.new(10, 0, 0))
+```
+
+Part shape affects raycasts (a ray through a box corner outside the inscribed sphere/cylinder/wedge misses):
+
+```lua
+local ball = Instance.new("Part", workspace)
+ball.Position = Vector3.new(5, 0, 0)
+ball.Size = Vector3.new(2, 2, 2)
+ball.Shape = Enum.PartType.Ball
+
+assert(workspace:Raycast(Vector3.new(0, 0.9, 0.9), Vector3.new(10, 0, 0)) == nil)
+assert(workspace:Raycast(Vector3.new(0, 0, 0), Vector3.new(10, 0, 0)).Instance == ball)
+```
+
+`UnionOperation` and `MeshPart` are `BasePart`s whose queries follow `CollisionFidelity` (verified against Studio): `Box` casts the bounding box, `Hull` a single convex hull, and `Default`/`PreciseConvexDecomposition` the exact convex decomposition. The same rule applies when a union or mesh is the shapecast caster. Concave unions come from the real CSG APIs — `Part:UnionAsync`/`SubtractAsync`/`IntersectAsync` (single result) or `GeometryService` (array result, `SplitApart` defaulting to `true`; mesh input yields mesh output). Results are bbox-centered with their decomposition stored, so later `Size` edits scale the geometry and `Clone()` carries the decomposition over:
+
+```lua
+local slab = Instance.new("Part", workspace)
+slab.Size = Vector3.new(4, 4, 4)
+slab.CFrame = CFrame.new(0, 2, 0)
+
+local cap = Instance.new("Part", workspace)
+cap.Size = Vector3.new(4, 4, 4)
+cap.CFrame = CFrame.new(2, 6, 0)
+
+local union = slab:UnionAsync({ cap }, Enum.CollisionFidelity.PreciseConvexDecomposition)
+union.Parent = workspace
+slab:Destroy()
+cap:Destroy()
+
+-- Bounding fidelity hits the empty corner; exact fidelity misses it.
+union.CollisionFidelity = Enum.CollisionFidelity.Box
+assert(workspace:Raycast(Vector3.new(-1, 6, -10), Vector3.new(0, 0, 20)) ~= nil)
+
+union.CollisionFidelity = Enum.CollisionFidelity.PreciseConvexDecomposition
+assert(workspace:Raycast(Vector3.new(-1, 6, -10), Vector3.new(0, 0, 20)) == nil)
+```
+
+```lua
+local geometry = game:GetService("GeometryService")
+
+local first = Instance.new("Part", workspace)
+first.Size = Vector3.new(2, 2, 2)
+first.CFrame = CFrame.new(0, 20, 0)
+
+local second = Instance.new("Part", workspace)
+second.Size = Vector3.new(2, 2, 2)
+second.CFrame = CFrame.new(50, 20, 0)
+
+-- SplitApart defaults to true, so disjoint bodies come back separately.
+local results = geometry:UnionAsync(first, { second })
+assert(#results == 2)
+assert(results[1].ClassName == "UnionOperation")
 ```
 
 ## RunService

@@ -1,4 +1,10 @@
+local Vector3 = require("./Vector3")
+
 local ClassData = {}
+
+local DEFAULT_PART_SIZE = Vector3.new(4, 1, 2)
+local DEFAULT_UNION_MESH_SIZE = Vector3.new(4, 1.2, 2)
+local EMPTY_TERRAIN_SIZE = Vector3.new(0, 0, 0)
 
 local nonCreatableClasses = {
 	CollectionService = true,
@@ -10,6 +16,9 @@ local nonCreatableClasses = {
 	StarterPlayer = true,
 	StarterPlayerScripts = true,
 	PlayerScripts = true,
+	Terrain = true,
+	GeometryService = true,
+	PartOperation = true,
 }
 
 local parentByClass = {
@@ -22,7 +31,11 @@ local parentByClass = {
 	Workspace = "Model",
 	BasePart = "Instance",
 	Part = "BasePart",
+	PartOperation = "BasePart",
+	UnionOperation = "PartOperation",
+	MeshPart = "BasePart",
 	SpawnLocation = "BasePart",
+	Terrain = "BasePart",
 	NumberValue = "Instance",
 	RemoteEvent = "Instance",
 	RemoteFunction = "Instance",
@@ -30,6 +43,7 @@ local parentByClass = {
 	Players = "Instance",
 	RunService = "Instance",
 	CollectionService = "Instance",
+	GeometryService = "Instance",
 	MemoryStoreService = "Instance",
 	ReplicatedStorage = "Instance",
 	ServerScriptService = "Instance",
@@ -54,9 +68,33 @@ local defaultPropsByClass = {
 	BasePart = {
 		Anchored = false,
 		CanCollide = true,
+		CanQuery = true,
+		CanTouch = true,
 		Transparency = 0,
+		Material = "Plastic",
+		CollisionGroup = "Default",
+		Size = DEFAULT_PART_SIZE,
 	},
-	Part = {},
+	Part = {
+		Shape = "Block",
+	},
+	UnionOperation = {
+		Size = DEFAULT_UNION_MESH_SIZE,
+		CollisionFidelity = "Box",
+		RenderFidelity = "Automatic",
+		UsePartColor = false,
+	},
+	MeshPart = {
+		Size = DEFAULT_UNION_MESH_SIZE,
+		CollisionFidelity = "Box",
+		RenderFidelity = "Automatic",
+		MeshId = "",
+		UsePartColor = false,
+	},
+	Terrain = {
+		Material = "Grass",
+		Size = EMPTY_TERRAIN_SIZE,
+	},
 	SpawnLocation = {
 		Neutral = true,
 	},
