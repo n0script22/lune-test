@@ -122,6 +122,47 @@ assert(workspace:Raycast(Vector3.new(0, 0.9, 0.9), Vector3.new(10, 0, 0)) == nil
 assert(workspace:Raycast(Vector3.new(0, 0, 0), Vector3.new(10, 0, 0)).Instance == ball)
 ```
 
+`UnionOperation` and `MeshPart` are `BasePart`s whose queries follow `CollisionFidelity` (verified against Studio): `Box` casts the bounding box, `Hull` a single convex hull, and `Default`/`PreciseConvexDecomposition` the exact convex decomposition. The same rule applies when a union or mesh is the shapecast caster. Concave unions come from the real CSG APIs — `Part:UnionAsync`/`SubtractAsync`/`IntersectAsync` (single result) or `GeometryService` (array result, `SplitApart` defaulting to `true`; mesh input yields mesh output). Results are bbox-centered with their decomposition stored, so later `Size` edits scale the geometry:
+
+```lua
+local slab = Instance.new("Part", workspace)
+slab.Size = Vector3.new(4, 4, 4)
+slab.CFrame = CFrame.new(0, 2, 0)
+
+local cap = Instance.new("Part", workspace)
+cap.Size = Vector3.new(4, 4, 4)
+cap.CFrame = CFrame.new(2, 6, 0)
+
+local union = slab:UnionAsync({ cap }, Enum.CollisionFidelity.PreciseConvexDecomposition)
+union.Parent = workspace
+slab:Destroy()
+cap:Destroy()
+
+-- Bounding fidelity hits the empty corner; exact fidelity misses it.
+union.CollisionFidelity = Enum.CollisionFidelity.Box
+assert(workspace:Raycast(Vector3.new(-1, 6, -10), Vector3.new(0, 0, 20)) ~= nil)
+
+union.CollisionFidelity = Enum.CollisionFidelity.PreciseConvexDecomposition
+assert(workspace:Raycast(Vector3.new(-1, 6, -10), Vector3.new(0, 0, 20)) == nil)
+```
+
+```lua
+local geometry = game:GetService("GeometryService")
+
+local first = Instance.new("Part", workspace)
+first.Size = Vector3.new(2, 2, 2)
+first.CFrame = CFrame.new(0, 20, 0)
+
+local second = Instance.new("Part", workspace)
+second.Size = Vector3.new(2, 2, 2)
+second.CFrame = CFrame.new(50, 20, 0)
+
+-- SplitApart defaults to true, so disjoint bodies come back separately.
+local results = geometry:UnionAsync(first, { second })
+assert(#results == 2)
+assert(results[1].ClassName == "UnionOperation")
+```
+
 ## RunService
 
 `RunService` exposes:

@@ -18,7 +18,7 @@ The sandbox exposes:
 - `Vector2`
 - `Vector3`
 
-`Enum.SortDirection.Ascending` and `Enum.SortDirection.Descending` are available for fake MemoryStore sorted maps. `Enum.RaycastFilterType.Exclude` and `Enum.RaycastFilterType.Include` are available for fake raycasts. `Enum.Material` (including `Plastic`, `SmoothPlastic`, `Wood`, `Metal`, `Glass`, `DiamondPlate`, `Neon`, `Grass`, and `Water`) and `Enum.PartType` (`Block`, `Ball`, `Cylinder`, `Wedge`, `CornerWedge`) are available for parts and shape queries.
+`Enum.SortDirection.Ascending` and `Enum.SortDirection.Descending` are available for fake MemoryStore sorted maps. `Enum.RaycastFilterType.Exclude` and `Enum.RaycastFilterType.Include` are available for fake raycasts. `Enum.Material` (including `Plastic`, `SmoothPlastic`, `Wood`, `Metal`, `Glass`, `DiamondPlate`, `Neon`, `Grass`, and `Water`) and `Enum.PartType` (`Block`, `Ball`, `Cylinder`, `Wedge`, `CornerWedge`) are available for parts and shape queries. `Enum.CollisionFidelity` (`Box`, `Hull`, `Default`, `PreciseConvexDecomposition`) and `Enum.RenderFidelity` (`Automatic`, `Precise`, `Performance`) drive union and mesh queries; `RenderFidelity` has no query effect.
 
 ## Supported Instance Classes
 
@@ -33,6 +33,9 @@ The fake class table supports:
 - `Workspace`
 - `BasePart`
 - `Part`
+- `PartOperation`
+- `UnionOperation`
+- `MeshPart`
 - `SpawnLocation`
 - `Terrain`
 - `NumberValue`
@@ -42,6 +45,7 @@ The fake class table supports:
 - `Players`
 - `RunService`
 - `CollectionService`
+- `GeometryService`
 - `MemoryStoreService`
 - `ReplicatedStorage`
 - `ServerScriptService`
@@ -92,7 +96,16 @@ Fake instances support:
 
 Common signals include `Changed`, `ChildAdded`, `ChildRemoved`, `Destroying`, `AncestryChanged`, and `AttributeChanged`.
 
-`BasePart` keeps `Position` and `CFrame` in sync, and setting `Position` preserves the current orientation. New parts default to `Size` of `(4, 1, 2)`, `CanQuery`/`CanCollide`/`CanTouch` on, `Material` of `Plastic`, and the `"Default"` collision group. `Part` adds `Shape` (default `Block`); `Workspace.Terrain` is a `BasePart` with an empty volume until a test sizes it. `NumberValue.Changed` fires with the new value when `Value` changes; other instances use the changed property name.
+`BasePart` keeps `Position` and `CFrame` in sync, and setting `Position` preserves the current orientation. New parts default to `Size` of `(4, 1, 2)`, `CanQuery`/`CanCollide`/`CanTouch` on, `Material` of `Plastic`, and the `"Default"` collision group. `Part` adds `Shape` (default `Block`); `UnionOperation` (a `PartOperation`) and `MeshPart` add `CollisionFidelity` (default `Box`) and `RenderFidelity` (default `Automatic`), with `MeshId` (`""`) on meshes; their `Size` is always the bounding box. `Workspace.Terrain` is a `BasePart` with an empty volume until a test sizes it. `NumberValue.Changed` fires with the new value when `Value` changes; other instances use the changed property name.
+
+```lua
+local union = Instance.new("UnionOperation", workspace)
+assert(union:IsA("BasePart"))
+assert(union.CollisionFidelity == Enum.CollisionFidelity.Box)
+
+union.CollisionFidelity = Enum.CollisionFidelity.PreciseConvexDecomposition
+assert(union.CollisionFidelity == Enum.CollisionFidelity.PreciseConvexDecomposition)
+```
 
 ```lua
 local value = Instance.new("NumberValue")

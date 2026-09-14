@@ -499,4 +499,50 @@ function m.servicesDocsShapeExample()
 	assert(workspace:Raycast(Vector3.new(0, 0, 0), Vector3.new(10, 0, 0)).Instance == ball)
 end
 
+function m.servicesDocsUnionFidelityExample()
+	local slab = Instance.new("Part", workspace)
+	slab.Size = Vector3.new(4, 4, 4)
+	slab.CFrame = CFrame.new(0, 2, 0)
+
+	local cap = Instance.new("Part", workspace)
+	cap.Size = Vector3.new(4, 4, 4)
+	cap.CFrame = CFrame.new(2, 6, 0)
+
+	local union = slab:UnionAsync({ cap }, Enum.CollisionFidelity.PreciseConvexDecomposition)
+	union.Parent = workspace
+	slab:Destroy()
+	cap:Destroy()
+
+	union.CollisionFidelity = Enum.CollisionFidelity.Box
+	assert(workspace:Raycast(Vector3.new(-1, 6, -10), Vector3.new(0, 0, 20)) ~= nil)
+
+	union.CollisionFidelity = Enum.CollisionFidelity.PreciseConvexDecomposition
+	assert(workspace:Raycast(Vector3.new(-1, 6, -10), Vector3.new(0, 0, 20)) == nil)
+end
+
+function m.servicesDocsGeometryServiceExample()
+	local geometry = game:GetService("GeometryService")
+
+	local first = Instance.new("Part", workspace)
+	first.Size = Vector3.new(2, 2, 2)
+	first.CFrame = CFrame.new(0, 20, 0)
+
+	local second = Instance.new("Part", workspace)
+	second.Size = Vector3.new(2, 2, 2)
+	second.CFrame = CFrame.new(50, 20, 0)
+
+	local results = geometry:UnionAsync(first, { second })
+	assert(#results == 2)
+	assert(results[1].ClassName == "UnionOperation")
+end
+
+function m.datatypesDocsCollisionFidelityExample()
+	local union = Instance.new("UnionOperation", workspace)
+	assert(union:IsA("BasePart"))
+	assert(union.CollisionFidelity == Enum.CollisionFidelity.Box)
+
+	union.CollisionFidelity = Enum.CollisionFidelity.PreciseConvexDecomposition
+	assert(union.CollisionFidelity == Enum.CollisionFidelity.PreciseConvexDecomposition)
+end
+
 return m
