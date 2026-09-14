@@ -396,8 +396,7 @@ function m.shapecastUnionCasterNotchPassesThrough()	local env = createEnvironmen
 	assertEqual(wallHit.Normal, Vector3.new(0, 0, -1))
 end
 
-function m.sweepExactTouchUnionCountsAsHit()
-	local env = createEnvironment({
+function m.sweepExactTouchUnionCountsAsHit()	local env = createEnvironment({
 		activePlayers = {},
 	})
 	local workspace = env.globals.Workspace
@@ -456,6 +455,44 @@ function m.sweepExactTouchUnionCountsAsHit()
 		workspace:Spherecast(Vector3.new(30, 900, 6), 1, Vector3.new(0, 0, -3)) ~= nil,
 		"exact-touch spherecast must hit a part"
 	)
+end
+
+function m.clonePreservesUnionDecomposition()
+	local env = createEnvironment({
+		activePlayers = {},
+	})
+	local workspace = env.globals.Workspace
+
+	local a = env.Instance.new("Part", workspace)
+	a.Size = Vector3.new(4, 4, 4)
+	a.CFrame = CFrame.new(0, 1000, 0)
+
+	local b = env.Instance.new("Part", workspace)
+	b.Size = Vector3.new(4, 4, 4)
+	b.CFrame = CFrame.new(1, 1002, 0)
+
+	local u = a:UnionAsync({ b }, Enum.CollisionFidelity.PreciseConvexDecomposition)
+	assert(u ~= nil, "expected union result")
+	u.Parent = workspace
+	a:Destroy()
+	b:Destroy()
+
+	local copy = u:Clone()
+	copy.Parent = workspace
+	assertEqual(copy.ClassName, "UnionOperation")
+	assertEqual(copy.Size, u.Size)
+	assertEqual(copy.CollisionFidelity, Enum.CollisionFidelity.PreciseConvexDecomposition)
+	u:Destroy()
+
+	assertEqual(
+		workspace:Raycast(Vector3.new(-1.5, 1003, -10), Vector3.new(0, 0, 20), RaycastParams.new()),
+		nil
+	)
+
+	local hit =
+		workspace:Raycast(Vector3.new(1, 1000, -10), Vector3.new(0, 0, 20), RaycastParams.new())
+	assert(hit ~= nil, "clone must answer queries from its own decomposition")
+	assertEqual(hit.Instance, copy)
 end
 
 return m

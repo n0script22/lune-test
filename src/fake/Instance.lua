@@ -745,6 +745,50 @@ function InstanceMethods:Clone()
 		rawset(clone, "_propertyPresence", clonedPropertyPresence)
 		rawset(clone, "_attributes", clonedAttributes)
 
+		-- CSG decomposition travels with the part (arrays are copied so the
+		-- clone never aliases the source's convexes; Vector3s are shared
+		-- like every other property value).
+		local sourceConvexes = rawget(source, "_collisionConvexes")
+
+		if sourceConvexes ~= nil then
+			local clonedConvexes = {}
+
+			for _, convex in ipairs(sourceConvexes) do
+				local verts = {}
+				local faces = {}
+				local normals = {}
+				local edges = {}
+
+				for i, v in ipairs(convex.verts) do
+					verts[i] = v
+				end
+				for i, f in ipairs(convex.faces) do
+					faces[i] = { f[1], f[2], f[3] }
+				end
+				for i, n in ipairs(convex.normals or {}) do
+					normals[i] = n
+				end
+				for i, e in ipairs(convex.edges or {}) do
+					edges[i] = e
+				end
+
+				table.insert(clonedConvexes, {
+					verts = verts,
+					faces = faces,
+					normals = normals,
+					edges = edges,
+				})
+			end
+
+			rawset(clone, "_collisionConvexes", clonedConvexes)
+		end
+
+		local sourceBaseSize = rawget(source, "_unionBaseSize")
+
+		if sourceBaseSize ~= nil then
+			rawset(clone, "_unionBaseSize", sourceBaseSize)
+		end
+
 		if sourceTags ~= nil then
 			if runtime ~= nil then
 				local collectionService = runtime:getService("CollectionService")
