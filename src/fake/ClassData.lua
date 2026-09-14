@@ -18,6 +18,7 @@ local nonCreatableClasses = {
 	PlayerScripts = true,
 	Terrain = true,
 	GeometryService = true,
+	PartOperation = true,
 }
 
 local parentByClass = {
@@ -30,7 +31,8 @@ local parentByClass = {
 	Workspace = "Model",
 	BasePart = "Instance",
 	Part = "BasePart",
-	UnionOperation = "BasePart",
+	PartOperation = "BasePart",
+	UnionOperation = "PartOperation",
 	MeshPart = "BasePart",
 	SpawnLocation = "BasePart",
 	Terrain = "BasePart",

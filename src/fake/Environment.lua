@@ -6,6 +6,7 @@ local CFrame = require("./CFrame")
 local ClassData = require("./ClassData")
 local CollisionGroups = require("./CollisionGroups")
 local Color3 = require("./Color3")
+local CsgService = require("./CsgService")
 local InstanceModule = require("./Instance")
 local Random = require("./Random")
 local RaycastParams = require("./RaycastParams")
@@ -27,6 +28,7 @@ local activeInstallController = nil
 
 local defaultAvailableServices = {
 	CollectionService = true,
+	GeometryService = true,
 	MemoryStoreService = true,
 	Players = true,
 	ReplicatedStorage = true,
@@ -38,6 +40,7 @@ local defaultAvailableServices = {
 
 local builtInServiceNames = {
 	"CollectionService",
+	"GeometryService",
 	"MemoryStoreService",
 	"Players",
 	"ReplicatedStorage",
@@ -1074,6 +1077,23 @@ function Environment:_createWorkspaceService()
 	return service
 end
 
+function Environment:_createGeometryService()
+	local service = self:_newInstance("GeometryService", self.game, true)
+	service.Name = "GeometryService"
+	-- Raw fields (not properties): these names collide with the BasePart
+	-- CSG methods, which InstanceMethods would otherwise shadow.
+	rawset(service, "UnionAsync", function(_, part, parts, options)
+		return CsgService.geometryOp(self, part, parts, "Union", "GeometryService:UnionAsync", options)
+	end)
+	rawset(service, "SubtractAsync", function(_, part, parts, options)
+		return CsgService.geometryOp(self, part, parts, "Subtract", "GeometryService:SubtractAsync", options)
+	end)
+	rawset(service, "IntersectAsync", function(_, part, parts, options)
+		return CsgService.geometryOp(self, part, parts, "Intersect", "GeometryService:IntersectAsync", options)
+	end)
+	return service
+end
+
 function Environment:_createGenericService(serviceName: string)
 	if ClassData.isSupported(serviceName) then
 		local service = self:_newInstance(serviceName, self.game, true)
@@ -1094,6 +1114,10 @@ function Environment:_instantiateService(serviceName: string)
 
 	if serviceName == "CollectionService" then
 		return self:_createCollectionService()
+	end
+
+	if serviceName == "GeometryService" then
+		return self:_createGeometryService()
 	end
 
 	if serviceName == "Players" then

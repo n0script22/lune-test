@@ -1,5 +1,6 @@
 local CFrame = require("./CFrame")
 local ClassData = require("./ClassData")
+local CsgService = require("./CsgService")
 local Signal = require("./Signal")
 local Vector3 = require("./Vector3")
 
@@ -543,6 +544,24 @@ function InstanceMethods:ClearAllChildren()
 	for _, child in ipairs(children) do
 		child:Destroy()
 	end
+end
+
+function InstanceMethods:UnionAsync(parts, collisionFidelity, renderFidelity)
+	local runtime = rawget(self, "_runtime")
+	assert(runtime ~= nil, "UnionAsync requires a fake environment runtime")
+	return CsgService.unionSingle(runtime, self, parts, collisionFidelity, renderFidelity)
+end
+
+function InstanceMethods:SubtractAsync(parts, collisionFidelity, renderFidelity)
+	local runtime = rawget(self, "_runtime")
+	assert(runtime ~= nil, "SubtractAsync requires a fake environment runtime")
+	return CsgService.subtractSingle(runtime, self, parts, collisionFidelity, renderFidelity)
+end
+
+function InstanceMethods:IntersectAsync(parts, collisionFidelity, renderFidelity)
+	local runtime = rawget(self, "_runtime")
+	assert(runtime ~= nil, "IntersectAsync requires a fake environment runtime")
+	return CsgService.intersectSingle(runtime, self, parts, collisionFidelity, renderFidelity)
 end
 
 function InstanceMetatable.__index(self, key)
