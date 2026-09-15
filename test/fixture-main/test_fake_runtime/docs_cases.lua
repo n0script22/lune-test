@@ -450,6 +450,8 @@ function m.servicesDocsBindToSimulationExample()
 	assert(count30 == 30)
 	assert(dt60 == 1 / 60)
 	assert(dt30 == 1 / 30)
+end
+
 function m.servicesDocsWorkspaceRaycastExample()
 	local wall = Instance.new("Part", workspace)
 	wall.Name = "Wall"
