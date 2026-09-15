@@ -802,22 +802,6 @@ function Environment:_createRunService()
 	return service
 end
 
-function Environment:_createWorkspaceService()
-	local service = self:_newInstance("Workspace", self.game, true)
-	service.Name = "Workspace"
-	service.DistributedGameTime = 0
-	service.AuthorityMode = "Automatic"
-	service.UseFixedSimulation = "Disabled"
-	service.SignalBehavior = "Default"
-	service.NextGenerationReplication = "Disabled"
-	service.StreamingEnabled = true
-	service.GetServerTimeNow = function()
-		return self._virtualClock:serverTime(self.scheduler:now())
-	end
-	self:_applyAuthorityModeDefaults(service)
-	return service
-end
-
 function Environment:_applyAuthorityModeDefaults(workspace)
 	if workspace == nil then
 		workspace = self._services.Workspace
@@ -1333,6 +1317,16 @@ end
 function Environment:_createWorkspaceService()
 	local service = self:_newInstance("Workspace", self.game, true)
 	service.Name = "Workspace"
+	service.DistributedGameTime = 0
+	service.AuthorityMode = "Automatic"
+	service.UseFixedSimulation = "Disabled"
+	service.SignalBehavior = "Default"
+	service.NextGenerationReplication = "Disabled"
+	service.StreamingEnabled = true
+	service.GetServerTimeNow = function()
+		return self._virtualClock:serverTime(self.scheduler:now())
+	end
+	self:_applyAuthorityModeDefaults(service)
 	service._collisionGroupData = CollisionGroups.new()
 	service.Raycast = function(raycastWorkspace, origin, direction, raycastParams)
 		return RayQuery.raycast(raycastWorkspace, origin, direction, raycastParams)
