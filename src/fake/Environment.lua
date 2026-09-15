@@ -7,6 +7,7 @@ local ClassData = require("./ClassData")
 local CollisionGroups = require("./CollisionGroups")
 local Color3 = require("./Color3")
 local CsgService = require("./CsgService")
+local Humanoid = require("./Humanoid")
 local InstanceModule = require("./Instance")
 local Random = require("./Random")
 local RaycastParams = require("./RaycastParams")
@@ -107,6 +108,45 @@ local defaultEnum = {
 		Neon = "Neon",
 		Grass = "Grass",
 		Water = "Water",
+		Air = "Air",
+	},
+	HumanoidStateType = {
+		FallingDown = "FallingDown",
+		Ragdoll = "Ragdoll",
+		GettingUp = "GettingUp",
+		Jumping = "Jumping",
+		Swimming = "Swimming",
+		Freefall = "Freefall",
+		Flying = "Flying",
+		Landed = "Landed",
+		Running = "Running",
+		RunningNoPhysics = "RunningNoPhysics",
+		StrafingNoPhysics = "StrafingNoPhysics",
+		Climbing = "Climbing",
+		Seated = "Seated",
+		PlatformStanding = "PlatformStanding",
+		Dead = "Dead",
+		Physics = "Physics",
+		None = "None",
+	},
+	HumanoidRigType = {
+		R6 = "R6",
+		R15 = "R15",
+	},
+	HumanoidHealthDisplayType = {
+		DisplayWhenDamaged = "DisplayWhenDamaged",
+		AlwaysOn = "AlwaysOn",
+		AlwaysOff = "AlwaysOff",
+	},
+	HumanoidDisplayDistanceType = {
+		Viewer = "Viewer",
+		Subject = "Subject",
+		None = "None",
+	},
+	NameOcclusion = {
+		NoOcclusion = "NoOcclusion",
+		EnemyOcclusion = "EnemyOcclusion",
+		OccludeAll = "OccludeAll",
 	},
 	PartType = {
 		Ball = "Ball",
@@ -638,6 +678,11 @@ function Environment:_trackStitchedInstance(instance)
 end
 
 function Environment:_configureInstance(instance)
+	if instance:IsA("Humanoid") then
+		Humanoid.configure(self, instance)
+		return
+	end
+
 	if instance:IsA("Player") then
 		instance.CharacterAdded = Signal.new(`{instance.Name}.CharacterAdded`, self._signalRegistry)
 		instance.CharacterRemoving = Signal.new(`{instance.Name}.CharacterRemoving`, self._signalRegistry)

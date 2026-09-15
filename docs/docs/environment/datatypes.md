@@ -43,6 +43,8 @@ The fake class table supports:
 - `RemoteFunction`
 - `Player`
 - `Players`
+- `Humanoid`
+- `ForceField`
 - `RunService`
 - `CollectionService`
 - `GeometryService`
@@ -117,6 +119,58 @@ end)
 
 value.Value = 10
 assert(changed == 10)
+```
+
+## Humanoid
+
+`Humanoid` gives a `Model` the functionality of a character. It defaults to `Health`/`MaxHealth` of `100`, `WalkSpeed` of `16`, `JumpPower` of `50`, an `R15` rig, and the `Running` state. `Health` clamps to `0..MaxHealth`; reaching `0` inside the `Workspace` kills the humanoid, fires `Died`, and locks `Health` at `0`. `MoveDirection` and `FloorMaterial` are read-only. `TakeDamage` subtracts from `Health` unless a `ForceField` protects the character.
+
+```lua
+local character = Instance.new("Model", workspace)
+character.Name = "Character"
+
+local rootPart = Instance.new("Part", character)
+rootPart.Name = "HumanoidRootPart"
+
+local humanoid = Instance.new("Humanoid", character)
+assert(humanoid.Health == 100)
+assert(humanoid.RootPart == rootPart)
+assert(humanoid:GetState() == Enum.HumanoidStateType.Running)
+
+local died = false
+humanoid.Died:Connect(function()
+	died = true
+end)
+
+humanoid:TakeDamage(100)
+assert(humanoid.Health == 0)
+assert(died)
+```
+
+`Move` sets the unit `MoveDirection`, while `MoveTo` sets a `WalkToPoint`/`WalkToPart` goal that times out with `MoveToFinished(false)` after 8 seconds. `ChangeState`/`GetState` drive the state machine, and `SetStateEnabled`/`GetStateEnabled` gate individual states.
+
+```lua
+local character = Instance.new("Model", workspace)
+character.Name = "Walker"
+
+local humanoid = Instance.new("Humanoid", character)
+
+humanoid:Move(Vector3.new(0, 0, 1))
+assert(humanoid.MoveDirection == Vector3.new(0, 0, 1))
+
+local finished = {}
+humanoid.MoveToFinished:Connect(function(reached)
+	table.insert(finished, reached)
+end)
+
+humanoid:MoveTo(Vector3.new(10, 0, 0))
+assert(humanoid.WalkToPoint == Vector3.new(10, 0, 0))
+
+getEnvironment().scheduler:advance(8)
+assert(finished[1] == false)
+
+humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+assert(humanoid:GetState() == Enum.HumanoidStateType.Jumping)
 ```
 
 ## RBXScriptSignal

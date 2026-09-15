@@ -1,6 +1,7 @@
 local CFrame = require("./CFrame")
 local ClassData = require("./ClassData")
 local CsgService = require("./CsgService")
+local Humanoid = require("./Humanoid")
 local Signal = require("./Signal")
 local SimAccess = require("./SimAccess")
 local Vector3 = require("./Vector3")
@@ -301,6 +302,17 @@ local function setProperty(self, propertyName: string, value)
 
 	if self:IsA("BasePart") and setBasePartSpatialProperty(self, propertyName, value) then
 		return
+	end
+
+	if self:IsA("Humanoid") then
+		local action, errMessage =
+			Humanoid.interceptPropertySet(self, propertyName, value, rawget(self, "_humanoidBypass") == true)
+
+		if action == "error" then
+			error(errMessage, 3)
+		elseif action == "handled" then
+			return
+		end
 	end
 
 	local properties = rawget(self, "_properties")

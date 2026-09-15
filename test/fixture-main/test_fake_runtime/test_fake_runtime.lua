@@ -13,6 +13,7 @@ local modules = {
 	require("./query_filter_cases"),
 	require("./union_csg_cases"),
 	require("./union_query_cases"),
+	require("./humanoid_cases"),
 }
 
 local m = {}

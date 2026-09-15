@@ -634,4 +634,50 @@ function m.datatypesDocsCollisionFidelityExample()
 	assert(union.CollisionFidelity == Enum.CollisionFidelity.PreciseConvexDecomposition)
 end
 
+function m.datatypesDocsHumanoidExample()
+	local character = Instance.new("Model", workspace)
+	character.Name = "Character"
+
+	local rootPart = Instance.new("Part", character)
+	rootPart.Name = "HumanoidRootPart"
+
+	local humanoid = Instance.new("Humanoid", character)
+	assert(humanoid.Health == 100)
+	assert(humanoid.RootPart == rootPart)
+	assert(humanoid:GetState() == Enum.HumanoidStateType.Running)
+
+	local died = false
+	humanoid.Died:Connect(function()
+		died = true
+	end)
+
+	humanoid:TakeDamage(100)
+	assert(humanoid.Health == 0)
+	assert(died)
+end
+
+function m.datatypesDocsHumanoidMovementExample()
+	local character = Instance.new("Model", workspace)
+	character.Name = "Walker"
+
+	local humanoid = Instance.new("Humanoid", character)
+
+	humanoid:Move(Vector3.new(0, 0, 1))
+	assert(humanoid.MoveDirection == Vector3.new(0, 0, 1))
+
+	local finished = {}
+	humanoid.MoveToFinished:Connect(function(reached)
+		table.insert(finished, reached)
+	end)
+
+	humanoid:MoveTo(Vector3.new(10, 0, 0))
+	assert(humanoid.WalkToPoint == Vector3.new(10, 0, 0))
+
+	getEnvironment().scheduler:advance(8)
+	assert(finished[1] == false)
+
+	humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+	assert(humanoid:GetState() == Enum.HumanoidStateType.Jumping)
+end
+
 return m
